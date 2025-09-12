@@ -3,66 +3,66 @@ import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-na
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
+import React from 'react';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+
 export default function WelcomeScreen() {
   const router = useRouter();
 
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={['#4c669f', '#3b5998', '#192f6a']}
-        style={styles.gradient}
-      >
-        <View style={styles.content}>
-          {/* Header */}
-          <View style={styles.header}>
-            <Ionicons name="medical" size={60} color="#fff" />
-            <Text style={styles.title}>Análisis de Salud Capilar</Text>
-            <Text style={styles.subtitle}>
-              Evaluación profesional con Inteligencia Artificial
-            </Text>
-          </View>
+      <View style={styles.content}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Ionicons name="medical" size={60} color="#4c669f" />
+          <Text style={styles.title}>Análisis de Salud Capilar</Text>
+          <Text style={styles.subtitle}>
+            Evaluación profesional con Inteligencia Artificial
+          </Text>
+        </View>
 
-          {/* Features */}
-          <View style={styles.features}>
-            <View style={styles.feature}>
-              <Ionicons name="camera" size={24} color="#fff" />
-              <Text style={styles.featureText}>Análisis fotográfico</Text>
-            </View>
-            <View style={styles.feature}>
-              <Ionicons name="document-text" size={24} color="#fff" />
-              <Text style={styles.featureText}>Documentos médicos</Text>
-            </View>
-            <View style={styles.feature}>
-              <Ionicons name="analytics" size={24} color="#fff" />
-              <Text style={styles.featureText}>Predicciones precisas</Text>
-            </View>
+        {/* Features */}
+        <View style={styles.features}>
+          <View style={styles.feature}>
+            <Ionicons name="camera" size={24} color="#4c669f" />
+            <Text style={styles.featureText}>Análisis fotográfico</Text>
           </View>
-
-          {/* Buttons */}
-          <View style={styles.buttonContainer}>
-            <TouchableOpacity 
-              style={styles.primaryButton}
-              onPress={() => router.push('/auth/login')}
-            >
-              <Text style={styles.primaryButtonText}>Iniciar Sesión</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.secondaryButton}
-              onPress={() => router.push('/auth/register')}
-            >
-              <Text style={styles.secondaryButtonText}>Crear Cuenta</Text>
-            </TouchableOpacity>
+          <View style={styles.feature}>
+            <Ionicons name="document-text" size={24} color="#4c669f" />
+            <Text style={styles.featureText}>Documentos médicos</Text>
           </View>
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Potenciado por Gemini AI
-            </Text>
+          <View style={styles.feature}>
+            <Ionicons name="analytics" size={24} color="#4c669f" />
+            <Text style={styles.featureText}>Predicciones precisas</Text>
           </View>
         </View>
-      </LinearGradient>
+
+        {/* Buttons */}
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity 
+            style={styles.primaryButton}
+            onPress={() => router.push('/auth/login')}
+          >
+            <Text style={styles.primaryButtonText}>Iniciar Sesión</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.secondaryButton}
+            onPress={() => router.push('/auth/register')}
+          >
+            <Text style={styles.secondaryButtonText}>Crear Cuenta</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            Potenciado por Gemini AI
+          </Text>
+        </View>
+      </View>
     </SafeAreaView>
   );
 }
@@ -70,9 +70,7 @@ export default function WelcomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  gradient: {
-    flex: 1,
+    backgroundColor: '#f8f9fa',
   },
   content: {
     flex: 1,
@@ -87,14 +85,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#4c669f',
     textAlign: 'center',
     marginTop: 16,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#e1e8f0',
+    color: '#6c757d',
     textAlign: 'center',
     lineHeight: 22,
   },
@@ -110,7 +108,7 @@ const styles = StyleSheet.create({
   },
   featureText: {
     fontSize: 16,
-    color: '#fff',
+    color: '#495057',
     marginLeft: 12,
     fontWeight: '500',
   },
@@ -118,7 +116,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   primaryButton: {
-    backgroundColor: '#fff',
+    backgroundColor: '#4c669f',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,
@@ -132,11 +130,11 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#3b5998',
+    color: '#fff',
   },
   secondaryButton: {
     borderWidth: 2,
-    borderColor: '#fff',
+    borderColor: '#4c669f',
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 12,
@@ -145,7 +143,7 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#fff',
+    color: '#4c669f',
   },
   footer: {
     alignItems: 'center',
@@ -153,6 +151,6 @@ const styles = StyleSheet.create({
   },
   footerText: {
     fontSize: 12,
-    color: '#b8c5d1',
+    color: '#6c757d',
   },
 });
