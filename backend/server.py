@@ -345,7 +345,6 @@ async def update_gemini_key(
     )
     return {"message": "API key de Gemini actualizada correctamente"}
 
-# Document upload endpoints
 @api_router.post("/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -361,9 +360,9 @@ async def upload_document(
             base64_content = base64.b64encode(content).decode('utf-8')
             processed_content = base64_content
         elif document_type == "pdf":
-            # For now, store as base64, will process later
-            base64_content = base64.b64encode(content).decode('utf-8')
-            processed_content = base64_content
+            # Extract text from PDF
+            text_content = extract_text_from_pdf(content)
+            processed_content = text_content
         else:
             raise HTTPException(status_code=400, detail="Tipo de documento no soportado")
         
@@ -429,30 +428,73 @@ async def analyze_hair(
             detail="El análisis capilar solo funciona con imágenes"
         )
     
-    # TODO: Implement Gemini analysis here
-    # For now return mock data
-    mock_result = HairAnalysisResult(
-        hair_count_estimate=12500,
-        baldness_zones=["Corona superior", "Línea frontal"],
-        alopecia_risk_3_years="Bajo (15%)",
-        alopecia_risk_5_years="Moderado (35%)",
-        alopecia_risk_10_years="Alto (65%)",
-        recommendations=[
-            "Mantener una dieta rica en proteínas y biotina",
-            "Usar champú sin sulfatos",
-            "Evitar peinados muy tirantes",
-            "Considerar suplementos de vitamina D"
-        ],
-        confidence_score=0.78
-    )
+    try:
+        # Analyze with Gemini AI
+        result = await analyze_hair_with_gemini(
+            current_user.gemini_api_key,
+            document["content"]
+        )
+        
+        # Save analysis result
+        await db.health_documents.update_one(
+            {"id": request.document_id},
+            {"$set": {"analysis_result": result.dict()}}
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Unexpected error in hair analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error inesperado: {str(e)}")
+
+@api_router.post("/analysis/document")
+async def analyze_document(
+    request: AnalysisRequest,
+    current_user: User = Depends(get_current_user)
+):
+    # Check if user has Gemini API key
+    if not current_user.gemini_api_key:
+        raise HTTPException(
+            status_code=400, 
+            detail="Necesitas configurar tu API key de Gemini primero"
+        )
     
-    # Save analysis result
-    await db.health_documents.update_one(
-        {"id": request.document_id},
-        {"$set": {"analysis_result": mock_result.dict()}}
-    )
+    # Get document
+    document = await db.health_documents.find_one({
+        "id": request.document_id,
+        "user_id": current_user.id
+    })
     
-    return mock_result
+    if not document:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    
+    if document["document_type"] != "pdf":
+        raise HTTPException(
+            status_code=400, 
+            detail="El análisis de documentos solo funciona con PDFs"
+        )
+    
+    try:
+        # Analyze with Gemini AI
+        result = await analyze_document_with_gemini(
+            current_user.gemini_api_key,
+            document["content"],
+            document["document_type"]
+        )
+        
+        # Save analysis result
+        await db.health_documents.update_one(
+            {"id": request.document_id},
+            {"$set": {"analysis_result": result}}
+        )
+        
+        return result
+        
+    except Exception as e:
+        logging.error(f"Error in document analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
 
 # Health dashboard endpoint
 @api_router.get("/dashboard")
