@@ -14,6 +14,10 @@ import uuid
 from datetime import datetime, timedelta
 import base64
 import json
+import asyncio
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+import PyPDF2
+import io
 
 # Load environment variables
 ROOT_DIR = Path(__file__).parent
@@ -119,6 +123,152 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
     
     return User(**user_data)
+
+def extract_text_from_pdf(pdf_content: bytes) -> str:
+    """Extract text from PDF content."""
+    try:
+        pdf_file = io.BytesIO(pdf_content)
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error procesando PDF: {str(e)}")
+
+async def analyze_hair_with_gemini(api_key: str, image_base64: str) -> HairAnalysisResult:
+    """Analyze hair image using Gemini API."""
+    try:
+        # Create LlmChat instance
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"hair_analysis_{uuid.uuid4()}",
+            system_message="Eres un especialista en tricología y análisis capilar. Tu trabajo es analizar imágenes del cuero cabelludo y cabello para proporcionar evaluaciones precisas."
+        ).with_model("gemini", "gemini-1.5-flash")
+
+        # Create image content
+        image_content = ImageContent(image_base64=image_base64)
+
+        # Create analysis prompt
+        analysis_prompt = """
+Analiza esta imagen del cuero cabelludo y cabello. Proporciona un análisis detallado que incluya:
+
+1. **Conteo estimado de cabellos**: Estima la cantidad aproximada de cabellos visibles en la imagen (número entero)
+
+2. **Zonas de calvicie o pérdida**: Identifica áreas específicas donde hay pérdida capilar o adelgazamiento (lista de strings)
+
+3. **Riesgo de alopecia**: Evalúa el riesgo de progresión de alopecia en diferentes períodos:
+   - A 3 años: [Bajo/Moderado/Alto] (porcentaje estimado)
+   - A 5 años: [Bajo/Moderado/Alto] (porcentaje estimado)  
+   - A 10 años: [Bajo/Moderado/Alto] (porcentaje estimado)
+
+4. **Recomendaciones**: Lista de 3-5 recomendaciones específicas para mantener o mejorar la salud capilar
+
+5. **Confianza del análisis**: Puntuación de 0.0 a 1.0 sobre la confianza en el análisis
+
+Responde SOLO en formato JSON válido con esta estructura exacta:
+{
+    "hair_count_estimate": número_entero,
+    "baldness_zones": ["zona1", "zona2"],
+    "alopecia_risk_3_years": "nivel (porcentaje%)",
+    "alopecia_risk_5_years": "nivel (porcentaje%)", 
+    "alopecia_risk_10_years": "nivel (porcentaje%)",
+    "recommendations": ["recomendación1", "recomendación2", "recomendación3"],
+    "confidence_score": número_decimal
+}
+"""
+
+        # Send message with image
+        user_message = UserMessage(
+            text=analysis_prompt,
+            file_contents=[image_content]
+        )
+
+        response = await chat.send_message(user_message)
+        
+        # Parse JSON response
+        try:
+            # Clean the response to extract JSON
+            response_text = response.strip()
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            
+            analysis_data = json.loads(response_text)
+            return HairAnalysisResult(**analysis_data)
+            
+        except json.JSONDecodeError as e:
+            # Fallback: try to extract information from text response
+            return HairAnalysisResult(
+                hair_count_estimate=None,
+                baldness_zones=["Análisis textual disponible"],
+                alopecia_risk_3_years="No determinado",
+                alopecia_risk_5_years="No determinado", 
+                alopecia_risk_10_years="No determinado",
+                recommendations=[f"Análisis detallado: {response[:200]}..."],
+                confidence_score=0.5
+            )
+            
+    except Exception as e:
+        logging.error(f"Error analyzing hair with Gemini: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en análisis con IA: {str(e)}")
+
+async def analyze_document_with_gemini(api_key: str, text_content: str, document_type: str) -> Dict[str, Any]:
+    """Analyze document content using Gemini API."""
+    try:
+        chat = LlmChat(
+            api_key=api_key,
+            session_id=f"document_analysis_{uuid.uuid4()}",
+            system_message="Eres un especialista médico en salud capilar y tricología. Analiza documentos médicos y proporciona insights relevantes."
+        ).with_model("gemini", "gemini-1.5-flash")
+
+        analysis_prompt = f"""
+Analiza el siguiente texto de un documento médico relacionado con salud capilar:
+
+{text_content}
+
+Proporciona un análisis que incluya:
+1. Hallazgos principales relacionados con salud capilar
+2. Recomendaciones basadas en la información
+3. Puntos de atención o seguimiento necesario
+
+Responde en formato JSON:
+{{
+    "main_findings": ["hallazgo1", "hallazgo2"],
+    "recommendations": ["recomendación1", "recomendación2"],
+    "follow_up_points": ["punto1", "punto2"],
+    "summary": "resumen_general"
+}}
+"""
+
+        user_message = UserMessage(text=analysis_prompt)
+        response = await chat.send_message(user_message)
+        
+        try:
+            response_text = response.strip()
+            if response_text.startswith("```json"):
+                response_text = response_text[7:]
+            if response_text.endswith("```"):
+                response_text = response_text[:-3]
+            
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            return {
+                "main_findings": ["Documento procesado"],
+                "recommendations": [f"Análisis: {response[:200]}..."],
+                "follow_up_points": ["Consulta con especialista"],
+                "summary": response[:300] + "..." if len(response) > 300 else response
+            }
+            
+    except Exception as e:
+        logging.error(f"Error analyzing document with Gemini: {str(e)}")
+        return {
+            "main_findings": ["Error en análisis"],
+            "recommendations": ["Revisar documento manualmente"],
+            "follow_up_points": ["Consulta técnica"],
+            "summary": f"Error: {str(e)}"
+        }
 
 # Authentication endpoints
 @api_router.post("/auth/register", response_model=Token)
