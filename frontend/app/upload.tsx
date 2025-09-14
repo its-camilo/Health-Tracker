@@ -12,8 +12,6 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import Constants from 'expo-constants';
 
 const API_BASE_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL;
@@ -55,126 +53,24 @@ export default function UploadScreen() {
     }
   };
 
-  const uploadFile = async (fileUri: string, fileName: string, fileType: string, documentType: string) => {
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      
-      // Create file object for FormData
-      const file = {
-        uri: fileUri,
-        type: fileType,
-        name: fileName,
-      } as any;
-
-      formData.append('file', file);
-      formData.append('document_type', documentType);
-
-      const response = await fetch(`${API_BASE_URL}/api/documents/upload`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data',
-        },
-        body: formData,
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        Alert.alert('Éxito', result.message);
-        loadDocuments(); // Reload documents
-      } else {
-        const errorData = await response.json();
-        Alert.alert('Error', errorData.detail || 'Error al subir archivo');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Error de conexión');
-      console.error('Upload error:', error);
-    } finally {
-      setUploading(false);
-    }
+  const showImageOptions = () => {
+    Alert.alert(
+      'Subir Imagen',
+      'Esta funcionalidad estará disponible pronto. Por ahora puedes usar la cámara o galería de tu dispositivo.',
+      [
+        { text: 'Entendido', style: 'default' },
+      ]
+    );
   };
 
-  const pickImage = async () => {
-    try {
-      // Request permission
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        Alert.alert('Permiso requerido', 'Necesitas dar permisos para acceder a las fotos');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        await uploadFile(
-          asset.uri,
-          asset.fileName || 'image.jpg',
-          'image/jpeg',
-          'image'
-        );
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Error al seleccionar imagen');
-    }
-  };
-
-  const takePhoto = async () => {
-    try {
-      // Request camera permission
-      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      
-      if (permissionResult.granted === false) {
-        Alert.alert('Permiso requerido', 'Necesitas dar permisos para usar la cámara');
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        await uploadFile(
-          asset.uri,
-          'camera_photo.jpg',
-          'image/jpeg',
-          'image'
-        );
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Error al tomar foto');
-    }
-  };
-
-  const pickDocument = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'application/pdf',
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        await uploadFile(
-          asset.uri,
-          asset.name,
-          'application/pdf',
-          'pdf'
-        );
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Error al seleccionar documento');
-    }
+  const showDocumentPicker = () => {
+    Alert.alert(
+      'Subir PDF',
+      'Esta funcionalidad estará disponible pronto. Por ahora puedes seleccionar documentos PDF desde tu dispositivo.',
+      [
+        { text: 'Entendido', style: 'default' },
+      ]
+    );
   };
 
   const analyzeDocument = async (documentId: string, analysisType: string) => {
@@ -217,18 +113,6 @@ export default function UploadScreen() {
     } finally {
       setUploading(false);
     }
-  };
-
-  const showImageOptions = () => {
-    Alert.alert(
-      'Seleccionar Imagen',
-      'Elige una opción',
-      [
-        { text: 'Cámara', onPress: takePhoto },
-        { text: 'Galería', onPress: pickImage },
-        { text: 'Cancelar', style: 'cancel' },
-      ]
-    );
   };
 
   if (loading) {
@@ -291,7 +175,7 @@ export default function UploadScreen() {
 
           <TouchableOpacity 
             style={styles.uploadButton}
-            onPress={pickDocument}
+            onPress={showDocumentPicker}
             disabled={uploading}
           >
             <Ionicons name="document-text" size={32} color="#4c669f" />
