@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Slot } from 'expo-router';
 import { AuthProvider } from '../context/AuthContext';
 import { Provider as PaperProvider } from 'react-native-paper';
 import * as SplashScreen from 'expo-splash-screen';
@@ -21,14 +21,7 @@ export default function RootLayout() {
   return (
     <PaperProvider>
       <AuthProvider>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="auth/login" />
-          <Stack.Screen name="auth/register" />
-          <Stack.Screen name="dashboard" />
-          <Stack.Screen name="settings" />
-          <Stack.Screen name="upload" />
-        </Stack>
+        <Slot />
       </AuthProvider>
     </PaperProvider>
   );
