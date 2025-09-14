@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,51 +7,13 @@ import {
   TouchableOpacity,
   Alert,
   ScrollView,
-  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../context/AuthContext';
-import Constants from 'expo-constants';
-
-const API_BASE_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL;
 
 export default function UploadScreen() {
   const [uploading, setUploading] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  
   const router = useRouter();
-  const { user, token } = useAuth();
-
-  useEffect(() => {
-    if (!user) {
-      router.replace('/');
-      return;
-    }
-    
-    loadDocuments();
-  }, [user]);
-
-  const loadDocuments = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/documents`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (response.ok) {
-        const documents = await response.json();
-        setUploadedFiles(documents);
-      }
-    } catch (error) {
-      console.error('Error loading documents:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const showImageOptions = () => {
     Alert.alert(
@@ -73,59 +35,6 @@ export default function UploadScreen() {
     );
   };
 
-  const analyzeDocument = async (documentId: string, analysisType: string) => {
-    try {
-      setUploading(true);
-      const endpoint = analysisType === 'capilar' 
-        ? '/api/analysis/hair' 
-        : '/api/analysis/document';
-
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          document_id: documentId,
-          analysis_type: analysisType,
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        Alert.alert(
-          'Análisis Completado',
-          'El análisis se ha completado correctamente. Puedes ver los resultados en el dashboard.',
-          [
-            {
-              text: 'Ver Dashboard',
-              onPress: () => router.push('/dashboard'),
-            },
-          ]
-        );
-      } else {
-        const errorData = await response.json();
-        Alert.alert('Error', errorData.detail || 'Error en el análisis');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Error de conexión');
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4c669f" />
-          <Text style={styles.loadingText}>Cargando...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView}>
@@ -141,23 +50,21 @@ export default function UploadScreen() {
         </View>
 
         {/* API Key Warning */}
-        {!user?.has_gemini_key && (
-          <View style={styles.warningCard}>
-            <Ionicons name="warning" size={24} color="#ff9500" />
-            <View style={styles.warningContent}>
-              <Text style={styles.warningTitle}>Configuración requerida</Text>
-              <Text style={styles.warningText}>
-                Configura tu API key de Gemini para realizar análisis
-              </Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.configButton}
-              onPress={() => router.push('/settings')}
-            >
-              <Text style={styles.configButtonText}>Configurar</Text>
-            </TouchableOpacity>
+        <View style={styles.warningCard}>
+          <Ionicons name="warning" size={24} color="#ff9500" />
+          <View style={styles.warningContent}>
+            <Text style={styles.warningTitle}>Configuración requerida</Text>
+            <Text style={styles.warningText}>
+              Configura tu API key de Gemini para realizar análisis
+            </Text>
           </View>
-        )}
+          <TouchableOpacity 
+            style={styles.configButton}
+            onPress={() => router.push('/settings')}
+          >
+            <Text style={styles.configButtonText}>Configurar</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Upload Options */}
         <View style={styles.uploadSection}>
@@ -184,66 +91,18 @@ export default function UploadScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Uploaded Files */}
+        {/* Empty State */}
         <View style={styles.filesSection}>
           <Text style={styles.sectionTitle}>Archivos Subidos</Text>
           
-          {uploadedFiles.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="folder-open-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No hay archivos subidos</Text>
-              <Text style={styles.emptySubtext}>
-                Sube una foto o documento para comenzar
-              </Text>
-            </View>
-          ) : (
-            uploadedFiles.map((file, index) => (
-              <View key={index} style={styles.fileCard}>
-                <View style={styles.fileInfo}>
-                  <Ionicons 
-                    name={file.type === 'image' ? 'image' : 'document-text'} 
-                    size={24} 
-                    color="#4c669f" 
-                  />
-                  <View style={styles.fileDetails}>
-                    <Text style={styles.fileName}>{file.filename}</Text>
-                    <Text style={styles.fileType}>
-                      {file.type === 'image' ? 'Imagen' : 'PDF'} • 
-                      {file.has_analysis ? ' Analizado' : ' Sin analizar'}
-                    </Text>
-                  </View>
-                </View>
-                
-                {!file.has_analysis && user?.has_gemini_key && (
-                  <TouchableOpacity
-                    style={styles.analyzeButton}
-                    onPress={() => analyzeDocument(
-                      file.id, 
-                      file.type === 'image' ? 'capilar' : 'general'
-                    )}
-                    disabled={uploading}
-                  >
-                    <Text style={styles.analyzeButtonText}>Analizar</Text>
-                  </TouchableOpacity>
-                )}
-                
-                {file.has_analysis && (
-                  <View style={styles.analyzedBadge}>
-                    <Ionicons name="checkmark-circle" size={16} color="#28a745" />
-                    <Text style={styles.analyzedText}>Analizado</Text>
-                  </View>
-                )}
-              </View>
-            ))
-          )}
-        </View>
-
-        {uploading && (
-          <View style={styles.uploadingOverlay}>
-            <ActivityIndicator size="large" color="#4c669f" />
-            <Text style={styles.uploadingText}>Procesando...</Text>
+          <View style={styles.emptyState}>
+            <Ionicons name="folder-open-outline" size={48} color="#ccc" />
+            <Text style={styles.emptyText}>No hay archivos subidos</Text>
+            <Text style={styles.emptySubtext}>
+              Sube una foto o documento para comenzar
+            </Text>
           </View>
-        )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
