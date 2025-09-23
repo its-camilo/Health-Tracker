@@ -15,6 +15,10 @@ from datetime import datetime, timedelta
 import base64
 import json
 import asyncio
+import requests
+import json
+
+# Remove the emergentintegrations import since it doesn't exist
 # from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 import PyPDF2
 import io
@@ -137,19 +141,12 @@ def extract_text_from_pdf(pdf_content: bytes) -> str:
         raise HTTPException(status_code=400, detail=f"Error procesando PDF: {str(e)}")
 
 async def analyze_hair_with_gemini(api_key: str, image_base64: str) -> HairAnalysisResult:
-    """Analyze hair image using Gemini API."""
+    """Analyze hair image using Google Gemini API."""
     try:
-        # Create LlmChat instance
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"hair_analysis_{uuid.uuid4()}",
-            system_message="Eres un especialista en tricología y análisis capilar. Tu trabajo es analizar imágenes del cuero cabelludo y cabello para proporcionar evaluaciones precisas."
-        ).with_model("gemini", "gemini-1.5-flash")
-
-        # Create image content
-        image_content = ImageContent(image_base64=image_base64)
-
-        # Create analysis prompt
+        # Google AI Studio API endpoint
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        
+        # Prepare the analysis prompt
         analysis_prompt = """
 Analiza esta imagen del cuero cabelludo y cabello. Proporciona un análisis detallado que incluya:
 
@@ -178,51 +175,72 @@ Responde SOLO en formato JSON válido con esta estructura exacta:
 }
 """
 
-        # Send message with image
-        user_message = UserMessage(
-            text=analysis_prompt,
-            file_contents=[image_content]
-        )
+        # Prepare the request payload
+        payload = {
+            "contents": [{
+                "parts": [
+                    {"text": analysis_prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": image_base64.split(",")[-1] if "," in image_base64 else image_base64
+                        }
+                    }
+                ]
+            }]
+        }
 
-        response = await chat.send_message(user_message)
+        # Make the API request
+        headers = {"Content-Type": "application/json"}
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+
+        result = response.json()
         
-        # Parse JSON response
-        try:
-            # Clean the response to extract JSON
-            response_text = response.strip()
-            if response_text.startswith("```json"):
-                response_text = response_text[7:]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
+        # Extract the generated text
+        if "candidates" in result and len(result["candidates"]) > 0:
+            generated_text = result["candidates"][0]["content"]["parts"][0]["text"]
             
-            analysis_data = json.loads(response_text)
-            return HairAnalysisResult(**analysis_data)
-            
-        except json.JSONDecodeError as e:
-            # Fallback: try to extract information from text response
-            return HairAnalysisResult(
-                hair_count_estimate=None,
-                baldness_zones=["Análisis textual disponible"],
-                alopecia_risk_3_years="No determinado",
-                alopecia_risk_5_years="No determinado", 
-                alopecia_risk_10_years="No determinado",
-                recommendations=[f"Análisis detallado: {response[:200]}..."],
-                confidence_score=0.5
-            )
-            
+            # Try to parse the JSON response
+            try:
+                # Clean the response text to extract JSON
+                response_text = generated_text.strip()
+                if response_text.startswith("```json"):
+                    response_text = response_text[7:]
+                if response_text.endswith("```"):
+                    response_text = response_text[:-3]
+                
+                analysis_data = json.loads(response_text)
+                return HairAnalysisResult(**analysis_data)
+                    
+            except json.JSONDecodeError as e:
+                logging.warning(f"Could not parse Gemini JSON response: {e}. Response: {generated_text[:200]}")
+                # Return a basic analysis if JSON parsing fails
+                return HairAnalysisResult(
+                    hair_count_estimate=None,
+                    baldness_zones=["Análisis textual disponible"],
+                    alopecia_risk_3_years="No determinado",
+                    alopecia_risk_5_years="No determinado", 
+                    alopecia_risk_10_years="No determinado",
+                    recommendations=[f"Análisis detallado: {generated_text[:200]}..."],
+                    confidence_score=0.5
+                )
+        else:
+            raise ValueError("No response from Gemini API")
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP error calling Gemini API: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error conectando con Gemini API: {str(e)}")
     except Exception as e:
         logging.error(f"Error analyzing hair with Gemini: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error en análisis con IA: {str(e)}")
 
 async def analyze_document_with_gemini(api_key: str, text_content: str, document_type: str) -> Dict[str, Any]:
-    """Analyze document content using Gemini API."""
+    """Analyze document content using Google Gemini API."""
     try:
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"document_analysis_{uuid.uuid4()}",
-            system_message="Eres un especialista médico en salud capilar y tricología. Analiza documentos médicos y proporciona insights relevantes."
-        ).with_model("gemini", "gemini-1.5-flash")
-
+        # Google AI Studio API endpoint
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        
         analysis_prompt = f"""
 Analiza el siguiente texto de un documento médico relacionado con salud capilar:
 
@@ -242,25 +260,51 @@ Responde en formato JSON:
 }}
 """
 
-        user_message = UserMessage(text=analysis_prompt)
-        response = await chat.send_message(user_message)
+        # Prepare the request payload
+        payload = {
+            "contents": [{
+                "parts": [{"text": analysis_prompt}]
+            }]
+        }
+
+        # Make the API request
+        headers = {"Content-Type": "application/json"}
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+
+        result = response.json()
         
-        try:
-            response_text = response.strip()
-            if response_text.startswith("```json"):
-                response_text = response_text[7:]
-            if response_text.endswith("```"):
-                response_text = response_text[:-3]
+        # Extract the generated text
+        if "candidates" in result and len(result["candidates"]) > 0:
+            generated_text = result["candidates"][0]["content"]["parts"][0]["text"]
             
-            return json.loads(response_text)
-        except json.JSONDecodeError:
-            return {
-                "main_findings": ["Documento procesado"],
-                "recommendations": [f"Análisis: {response[:200]}..."],
-                "follow_up_points": ["Consulta con especialista"],
-                "summary": response[:300] + "..." if len(response) > 300 else response
-            }
+            try:
+                # Clean the response text to extract JSON
+                response_text = generated_text.strip()
+                if response_text.startswith("```json"):
+                    response_text = response_text[7:]
+                if response_text.endswith("```"):
+                    response_text = response_text[:-3]
+                
+                return json.loads(response_text)
+            except json.JSONDecodeError:
+                return {
+                    "main_findings": ["Documento procesado"],
+                    "recommendations": [f"Análisis: {generated_text[:200]}..."],
+                    "follow_up_points": ["Consulta con especialista"],
+                    "summary": generated_text[:300] + "..." if len(generated_text) > 300 else generated_text
+                }
+        else:
+            raise ValueError("No response from Gemini API")
             
+    except requests.exceptions.RequestException as e:
+        logging.error(f"HTTP error calling Gemini API: {str(e)}")
+        return {
+            "main_findings": ["Error en análisis"],
+            "recommendations": ["Revisar documento manualmente"],
+            "follow_up_points": ["Consulta técnica"],
+            "summary": f"Error de conexión: {str(e)}"
+        }
     except Exception as e:
         logging.error(f"Error analyzing document with Gemini: {str(e)}")
         return {
