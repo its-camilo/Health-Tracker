@@ -93,12 +93,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const verifyToken = useCallback(async (authToken: string) => {
     try {
       const base = ensureBaseUrl();
-      const response = await fetch(`${base}/auth/me`, {
+      // Try /api/auth/me first (for server.py), then fallback to /auth/me (for server_basic.py)
+      let response = await fetch(`${base}/api/auth/me`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
       });
+
+      // If /api/auth/me fails with 404, try direct /auth/me
+      if (!response.ok && response.status === 404) {
+        response = await fetch(`${base}/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+      }
+
       if (!response.ok) {
         throw new Error('Token invalid');
       }
@@ -140,14 +152,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       const base = ensureBaseUrl();
-      // El backend actual espera username/password en /auth/login
-      const response = await fetch(`${base}/auth/login`, {
+      // Try /api/auth/login first (for server.py), then fallback to /auth/login (for server_basic.py)
+      let response = await fetch(`${base}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ username: email, password }),
       });
+
+      // If /api/auth/login fails with 404, try direct /auth/login
+      if (!response.ok && response.status === 404) {
+        response = await fetch(`${base}/auth/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ username: email, password }),
+        });
+      }
 
       let data: any;
       try {
@@ -198,14 +221,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (email: string, password: string, name: string) => {
     try {
       const base = ensureBaseUrl();
-      // Backend /auth/register espera: username, email, password
-      const response = await fetch(`${base}/auth/register`, {
+      // Try /api/auth/register first (for server.py), then fallback to /auth/register (for server_basic.py)
+      let response = await fetch(`${base}/api/auth/register`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ username: name.trim() || email.split('@')[0], email, password }),
       });
+
+      // If /api/auth/register fails with 404, try direct /auth/register
+      if (!response.ok && response.status === 404) {
+        response = await fetch(`${base}/auth/register`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ username: name.trim() || email.split('@')[0], email, password }),
+        });
+      }
 
       let data: any;
       try {

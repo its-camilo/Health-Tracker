@@ -16,7 +16,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import Constants from 'expo-constants';
 
-const API_BASE_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || process.env.EXPO_PUBLIC_BACKEND_URL;
+// Use the same base URL function as AuthContext for consistency
+function getBaseUrl(): string {
+  const DEFAULT_BACKEND_URL = 'https://fantastic-train-rxwxqr7g55xcww9v-8000.app.github.dev';
+  const RESOLVED_BACKEND_URL = (
+    (typeof process !== 'undefined' && (process as any)?.env?.EXPO_PUBLIC_BACKEND_URL) ||
+    Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL ||
+    DEFAULT_BACKEND_URL
+  );
+  
+  if (!RESOLVED_BACKEND_URL) {
+    console.warn('[Settings] Backend URL no encontrada, usando fallback DEFAULT_BACKEND_URL');
+    return DEFAULT_BACKEND_URL;
+  }
+  return RESOLVED_BACKEND_URL.replace(/\/$/, '');
+}
 
 export default function SettingsScreen() {
   const [geminiKey, setGeminiKey] = useState('');
@@ -40,14 +54,18 @@ export default function SettingsScreen() {
       return;
     }
 
-    if (!geminiKey.startsWith('AIza')) {
-      Alert.alert('Error', 'La API key de Gemini debe comenzar con "AIza"');
+    // Updated validation to support various Google AI Studio API key formats
+    // Keys can start with AIza, but also other formats are supported
+    if (geminiKey.length < 30) {
+      Alert.alert('Error', 'La API key de Gemini parece ser demasiado corta. Verifica que hayas copiado la clave completa.');
       return;
     }
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/gemini-key`, {
+      const baseUrl = getBaseUrl();
+      // First try with /api prefix (for server.py), then fallback to direct (for server_basic.py)
+      let response = await fetch(`${baseUrl}/api/auth/gemini-key`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -55,6 +73,18 @@ export default function SettingsScreen() {
         },
         body: JSON.stringify({ gemini_api_key: geminiKey }),
       });
+
+      // If /api/auth/gemini-key fails, try direct /auth/gemini-key
+      if (!response.ok && response.status === 404) {
+        response = await fetch(`${baseUrl}/auth/gemini-key`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ gemini_api_key: geminiKey }),
+        });
+      }
 
       if (response.ok) {
         updateUser({ has_gemini_key: true });
@@ -109,7 +139,7 @@ export default function SettingsScreen() {
               value={geminiKey}
               onChangeText={setGeminiKey}
               mode="outlined"
-              placeholder="AIzaSy..."
+              placeholder="Pega tu API key aquí..."
               secureTextEntry={!showKey}
               style={styles.input}
               theme={{
@@ -147,7 +177,7 @@ export default function SettingsScreen() {
                 <Text style={styles.stepNumberText}>1</Text>
               </View>
               <Text style={styles.stepText}>
-                Ve a Google AI Studio (ai.google.dev)
+                Ve a Google AI Studio: https://aistudio.google.com/apikey
               </Text>
             </View>
 
@@ -165,7 +195,7 @@ export default function SettingsScreen() {
                 <Text style={styles.stepNumberText}>3</Text>
               </View>
               <Text style={styles.stepText}>
-        Haz clic en &quot;Get API Key&quot; y crear una nueva clave
+                Haz clic en "Create API Key" y selecciona un proyecto
               </Text>
             </View>
 
@@ -174,7 +204,16 @@ export default function SettingsScreen() {
                 <Text style={styles.stepNumberText}>4</Text>
               </View>
               <Text style={styles.stepText}>
-                Copia la API key y pégala aquí
+                Copia la API key generada y pégala aquí
+              </Text>
+            </View>
+
+            <View style={styles.step}>
+              <View style={styles.stepNumber}>
+                <Text style={styles.stepNumberText}>💡</Text>
+              </View>
+              <Text style={styles.stepText}>
+                Esta API key te permitirá usar Gemini 2.5 Pro de forma gratuita según los límites de Google AI Studio
               </Text>
             </View>
           </View>
