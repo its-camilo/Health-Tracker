@@ -31,7 +31,8 @@ export default function SettingsScreen() {
       router.replace('/');
       return;
     }
-  }, [user]);
+    // Incluimos router como dependencia para cumplir con react-hooks/exhaustive-deps
+  }, [user, router]);
 
   const handleSaveKey = async () => {
     if (!geminiKey.trim()) {
@@ -71,7 +72,7 @@ export default function SettingsScreen() {
         const errorData = await response.json();
         Alert.alert('Error', errorData.detail || 'Error al guardar la API key');
       }
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Error de conexión');
     } finally {
       setLoading(false);
@@ -164,7 +165,7 @@ export default function SettingsScreen() {
                 <Text style={styles.stepNumberText}>3</Text>
               </View>
               <Text style={styles.stepText}>
-                Haz clic en "Get API Key" y crear una nueva clave
+        Haz clic en &quot;Get API Key&quot; y crear una nueva clave
               </Text>
             </View>
 

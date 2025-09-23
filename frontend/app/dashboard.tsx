@@ -11,6 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
+import ProtectedRoute from '../components/ProtectedRoute';
 
 export default function DashboardScreen() {
   const { user, logout } = useAuth();
@@ -19,13 +20,15 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('Dashboard useEffect - user:', user);
     if (!user) {
+      console.log('No user found, redirecting to home...');
       router.replace('/');
       return;
     }
-    
     loadDashboard();
-  }, [user]);
+    // Nota: añadimos 'router' a las dependencias para satisfacer la regla react-hooks/exhaustive-deps.
+  }, [user, router]);
 
   const loadDashboard = async () => {
     try {
@@ -51,8 +54,15 @@ export default function DashboardScreen() {
         {
           text: 'Sí, cerrar sesión',
           onPress: async () => {
-            await logout();
-            router.replace('/');
+            try {
+              console.log('Iniciando logout...');
+              await logout();
+              console.log('Logout completado, navegando a inicio...');
+              router.replace('/');
+            } catch (error) {
+              console.error('Error durante logout:', error);
+              Alert.alert('Error', 'Hubo un problema al cerrar sesión');
+            }
           },
         },
       ]
@@ -70,98 +80,100 @@ export default function DashboardScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView}>
-        {/* Header */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.welcomeText}>¡Hola!</Text>
-            <Text style={styles.userName}>{user?.name}</Text>
-          </View>
-          <TouchableOpacity 
-            style={styles.logoutButton}
-            onPress={handleLogout}
-          >
-            <Ionicons name="log-out-outline" size={24} color="#666" />
-          </TouchableOpacity>
-        </View>
-
-        {/* API Key Status */}
-        {!user?.has_gemini_key && (
-          <View style={styles.alertCard}>
-            <Ionicons name="warning" size={24} color="#ff9500" />
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>Configuración requerida</Text>
-              <Text style={styles.alertText}>
-                Necesitas configurar tu API key de Gemini para comenzar
-              </Text>
+    <ProtectedRoute>
+      <SafeAreaView style={styles.container}>
+        <ScrollView style={styles.scrollView}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.welcomeText}>¡Hola!</Text>
+              <Text style={styles.userName}>{user?.name}</Text>
             </View>
             <TouchableOpacity 
-              style={styles.configButton}
-              onPress={() => router.push('/settings')}
+              style={styles.logoutButton}
+              onPress={handleLogout}
             >
-              <Text style={styles.configButtonText}>Configurar</Text>
+              <Ionicons name="log-out-outline" size={24} color="#666" />
             </TouchableOpacity>
           </View>
-        )}
 
-        {/* Stats Cards */}
-        <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
-            <Ionicons name="document-text" size={32} color="#4c669f" />
-            <Text style={styles.statNumber}>{dashboardData?.total_documents || 0}</Text>
-            <Text style={styles.statLabel}>Documentos</Text>
-          </View>
-          
-          <View style={styles.statCard}>
-            <Ionicons name="analytics" size={32} color="#4c669f" />
-            <Text style={styles.statNumber}>{dashboardData?.analyzed_documents || 0}</Text>
-            <Text style={styles.statLabel}>Analizados</Text>
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => router.push('/upload')}
-          >
-            <Ionicons name="camera" size={24} color="#fff" />
-            <Text style={styles.actionButtonText}>Subir Foto</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => router.push('/upload')}
-          >
-            <Ionicons name="document-text" size={24} color="#fff" />
-            <Text style={styles.actionButtonText}>Subir PDF</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Recent Analyses */}
-        <View style={styles.recentContainer}>
-          <Text style={styles.sectionTitle}>Análisis Recientes</Text>
-          
-          {dashboardData?.recent_analyses?.length > 0 ? (
-            dashboardData.recent_analyses.map((analysis: any, index: number) => (
-              <View key={index} style={styles.analysisCard}>
-                <Text style={styles.analysisTitle}>{analysis.filename}</Text>
-                <Text style={styles.analysisDate}>{analysis.created_at}</Text>
+          {/* API Key Status */}
+          {!user?.has_gemini_key && (
+            <View style={styles.alertCard}>
+              <Ionicons name="warning" size={24} color="#ff9500" />
+              <View style={styles.alertContent}>
+                <Text style={styles.alertTitle}>Configuración requerida</Text>
+                <Text style={styles.alertText}>
+                  Necesitas configurar tu API key de Gemini para comenzar
+                </Text>
               </View>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons name="document-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>No hay análisis aún</Text>
-              <Text style={styles.emptySubtext}>
-                Sube una foto o documento para comenzar
-              </Text>
+              <TouchableOpacity 
+                style={styles.configButton}
+                onPress={() => router.push('/settings')}
+              >
+                <Text style={styles.configButtonText}>Configurar</Text>
+              </TouchableOpacity>
             </View>
           )}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+
+          {/* Stats Cards */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Ionicons name="document-text" size={32} color="#4c669f" />
+              <Text style={styles.statNumber}>{dashboardData?.total_documents || 0}</Text>
+              <Text style={styles.statLabel}>Documentos</Text>
+            </View>
+            
+            <View style={styles.statCard}>
+              <Ionicons name="analytics" size={32} color="#4c669f" />
+              <Text style={styles.statNumber}>{dashboardData?.analyzed_documents || 0}</Text>
+              <Text style={styles.statLabel}>Analizados</Text>
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.actionsContainer}>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => router.push('/upload')}
+            >
+              <Ionicons name="camera" size={24} color="#fff" />
+              <Text style={styles.actionButtonText}>Subir Foto</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => router.push('/upload')}
+            >
+              <Ionicons name="document-text" size={24} color="#fff" />
+              <Text style={styles.actionButtonText}>Subir PDF</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Recent Analyses */}
+          <View style={styles.recentContainer}>
+            <Text style={styles.sectionTitle}>Análisis Recientes</Text>
+            
+            {dashboardData?.recent_analyses?.length > 0 ? (
+              dashboardData.recent_analyses.map((analysis: any, index: number) => (
+                <View key={index} style={styles.analysisCard}>
+                  <Text style={styles.analysisTitle}>{analysis.filename}</Text>
+                  <Text style={styles.analysisDate}>{analysis.created_at}</Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyState}>
+                <Ionicons name="document-outline" size={48} color="#ccc" />
+                <Text style={styles.emptyText}>No hay análisis aún</Text>
+                <Text style={styles.emptySubtext}>
+                  Sube una foto o documento para comenzar
+                </Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </ProtectedRoute>
   );
 }
 

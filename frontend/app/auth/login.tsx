@@ -1,19 +1,19 @@
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  Alert,
+  // Alert,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
   ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { TextInput } from 'react-native-paper';
-import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Snackbar, TextInput } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 
 export default function LoginScreen() {
@@ -25,18 +25,33 @@ export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
 
+  // Snackbar state
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMsg, setSnackbarMsg] = useState('');
+  const [snackbarType, setSnackbarType] = useState<'success' | 'error'>('success');
+
+  const showSnack = (msg: string, type: 'success' | 'error') => {
+    setSnackbarMsg(msg);
+    setSnackbarType(type);
+    setSnackbarVisible(true);
+  };
+
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Por favor ingresa email y contraseña');
+      showSnack('Por favor ingresa email y contraseña', 'error');
       return;
     }
 
     setLoading(true);
     try {
       await login(email, password);
-      router.replace('/dashboard');
+      showSnack('Inicio de sesión exitoso', 'success');
+      // Dar un breve tiempo para que el usuario vea el toast antes de navegar
+      setTimeout(() => {
+        router.replace('/dashboard');
+      }, 400);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Error al iniciar sesión');
+      showSnack(error?.message || 'Error al iniciar sesión', 'error');
     } finally {
       setLoading(false);
     }
@@ -110,6 +125,8 @@ export default function LoginScreen() {
                 style={[styles.loginButton, loading && styles.buttonDisabled]}
                 onPress={handleLogin}
                 disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Botón de iniciar sesión"
               >
                 <Text style={styles.loginButtonText}>
                   {loading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
@@ -128,6 +145,16 @@ export default function LoginScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </LinearGradient>
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={2500}
+        style={{
+          backgroundColor: snackbarType === 'success' ? '#2e7d32' : '#c62828',
+        }}
+      >
+        {snackbarMsg}
+      </Snackbar>
     </SafeAreaView>
   );
 }

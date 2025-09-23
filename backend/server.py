@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 import base64
 import json
 import asyncio
-from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+# from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 import PyPDF2
 import io
 

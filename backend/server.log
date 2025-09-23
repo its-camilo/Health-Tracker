@@ -1,0 +1,20 @@
+nohup: ignoring input
+INFO:     Will watch for changes in these directories: ['/workspaces/Health-Tracker/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [16845] using StatReload
+INFO:     Started server process [16868]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     135.237.130.233:0 - "POST /auth/register HTTP/1.1" 200 OK
+INFO:     135.237.130.233:0 - "POST /auth/login HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'server_basic.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16868]
+INFO:     Started server process [18231]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     168.176.40.174:0 - "OPTIONS /auth/register HTTP/1.1" 200 OK
+INFO:     168.176.40.174:0 - "POST /auth/register HTTP/1.1" 422 Unprocessable Entity
+INFO:     168.176.40.174:0 - "POST /auth/register HTTP/1.1" 200 OK

@@ -1,19 +1,19 @@
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
+    // Alert,
+    KeyboardAvoidingView,
+    Platform,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { TextInput } from 'react-native-paper';
-import { useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Snackbar, TextInput } from 'react-native-paper';
 import { useAuth } from '../../context/AuthContext';
 
 export default function RegisterScreen() {
@@ -28,28 +28,50 @@ export default function RegisterScreen() {
   const router = useRouter();
   const { register } = useAuth();
 
+  // Snackbar state
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMsg, setSnackbarMsg] = useState('');
+  const [snackbarType, setSnackbarType] = useState<'success' | 'error'>('success');
+
+  const showSnack = (msg: string, type: 'success' | 'error') => {
+    setSnackbarMsg(msg);
+    setSnackbarType(type);
+    setSnackbarVisible(true);
+  };
+
   const handleRegister = async () => {
     if (!name || !email || !password || !confirmPassword) {
-      Alert.alert('Error', 'Por favor completa todos los campos');
+      showSnack('Por favor completa todos los campos', 'error');
       return;
     }
-
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Las contraseñas no coinciden');
+      showSnack('Las contraseñas no coinciden', 'error');
       return;
     }
-
     if (password.length < 6) {
-      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres');
+      showSnack('La contraseña debe tener al menos 6 caracteres', 'error');
       return;
     }
 
     setLoading(true);
     try {
       await register(email, password, name);
-      router.replace('/dashboard');
+      showSnack('Cuenta creada correctamente', 'success');
+      setTimeout(() => {
+        router.replace('/dashboard');
+      }, 400);
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Error al registrarse');
+      console.error('Error de registro:', error);
+      // Mejor manejo de errores
+      let errorMessage = 'Error al registrarse';
+      if (error?.message) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error?.toString && typeof error.toString === 'function') {
+        errorMessage = error.toString();
+      }
+      showSnack(errorMessage, 'error');
     } finally {
       setLoading(false);
     }
@@ -159,6 +181,8 @@ export default function RegisterScreen() {
                 style={[styles.registerButton, loading && styles.buttonDisabled]}
                 onPress={handleRegister}
                 disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Botón de crear cuenta"
               >
                 <Text style={styles.registerButtonText}>
                   {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
@@ -177,6 +201,16 @@ export default function RegisterScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
       </LinearGradient>
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={2500}
+        style={{
+          backgroundColor: snackbarType === 'success' ? '#2e7d32' : '#c62828',
+        }}
+      >
+        {snackbarMsg}
+      </Snackbar>
     </SafeAreaView>
   );
 }

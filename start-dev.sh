@@ -12,13 +12,13 @@ echo "Press Ctrl+C to stop all servers"
 echo ""
 
 # Start backend in background
-cd /home/runner/work/Health-Tracker/Health-Tracker/backend
-uvicorn server:app --host 0.0.0.0 --port 8000 --reload &
+cd /workspaces/Health-Tracker/backend
+uvicorn server_basic:app --host 0.0.0.0 --port 8000 --reload &
 BACKEND_PID=$!
 
 # Start frontend in background
-cd /home/runner/work/Health-Tracker/Health-Tracker/frontend  
-expo start --web --host 0.0.0.0 &
+cd /workspaces/Health-Tracker/frontend  
+npx expo start --web --host localhost &
 FRONTEND_PID=$!
 
 # Wait for interrupt

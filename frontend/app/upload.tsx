@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function UploadScreen() {
-  const [uploading, setUploading] = useState(false);
+  // Eliminamos setUploading porque no se usaba (warning ESLint)
+  const [uploading] = useState(false);
   const router = useRouter();
 
   const showImageOptions = () => {
