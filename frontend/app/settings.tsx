@@ -195,7 +195,7 @@ export default function SettingsScreen() {
                 <Text style={styles.stepNumberText}>3</Text>
               </View>
               <Text style={styles.stepText}>
-                Haz clic en "Create API Key" y selecciona un proyecto
+                Haz clic en &quot;Create API Key&quot; y selecciona un proyecto
               </Text>
             </View>
 
