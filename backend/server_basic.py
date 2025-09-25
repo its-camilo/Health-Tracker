@@ -20,8 +20,17 @@ load_dotenv(ROOT_DIR / '.env')
 
 # Create default .env if it doesn't exist
 if not (ROOT_DIR / '.env').exists():
-    with open(ROOT_DIR / '.env', 'w', encoding='utf-8') as f:
-        f.write("""MONGO_URL=mongodb://localhost:27017
+    env_example = ROOT_DIR / '.env.example'
+    if env_example.exists():
+        # Copy from .env.example if it exists
+        with open(env_example, 'r', encoding='utf-8') as f:
+            env_content = f.read()
+        with open(ROOT_DIR / '.env', 'w', encoding='utf-8') as f:
+            f.write(env_content)
+    else:
+        # Create basic .env file
+        with open(ROOT_DIR / '.env', 'w', encoding='utf-8') as f:
+            f.write("""MONGO_URL=mongodb://localhost:27017
 DB_NAME=health_tracker
 JWT_SECRET=your-secret-key-here
 JWT_ALGORITHM=HS256

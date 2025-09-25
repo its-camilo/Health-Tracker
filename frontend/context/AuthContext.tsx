@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
 import React, { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
+import { getBackendBaseUrl, warnIfUsingFallback } from '../constants/api';
 
 // Types
 interface User {
@@ -23,25 +23,10 @@ interface AuthContextType {
 // Create context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// API Base URL resolution strategy (orden de prioridad):
-// 1. process.env.EXPO_PUBLIC_BACKEND_URL (inyectada por Expo en tiempo de build)
-// 2. Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL (app.json / app.config.*)
-
-// 3. Fallback constante definido aquí (Codespaces actual)
-const DEFAULT_BACKEND_URL = 'https://fantastic-train-rxwxqr7g55xcww9v-8000.app.github.dev';
-const RESOLVED_BACKEND_URL = (
-  (typeof process !== 'undefined' && (process as any)?.env?.EXPO_PUBLIC_BACKEND_URL) ||
-  Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL ||
-  DEFAULT_BACKEND_URL
-);
+warnIfUsingFallback();
 
 function ensureBaseUrl(): string {
-  if (!RESOLVED_BACKEND_URL) {
-    // Último recurso: se retorna fallback y se avisa por consola en lugar de lanzar.
-    console.warn('[Auth] Backend URL no encontrada, usando fallback DEFAULT_BACKEND_URL');
-    return DEFAULT_BACKEND_URL;
-  }
-  return RESOLVED_BACKEND_URL.replace(/\/$/, '');
+  return getBackendBaseUrl();
 }
 
 async function safeParseJSON(response: Response) {

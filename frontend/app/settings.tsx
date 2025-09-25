@@ -14,22 +14,13 @@ import { TextInput } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import Constants from 'expo-constants';
+import { getBackendBaseUrl, warnIfUsingFallback } from '../constants/api';
 
 // Use the same base URL function as AuthContext for consistency
+warnIfUsingFallback();
+
 function getBaseUrl(): string {
-  const DEFAULT_BACKEND_URL = 'https://fantastic-train-rxwxqr7g55xcww9v-8000.app.github.dev';
-  const RESOLVED_BACKEND_URL = (
-    (typeof process !== 'undefined' && (process as any)?.env?.EXPO_PUBLIC_BACKEND_URL) ||
-    Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL ||
-    DEFAULT_BACKEND_URL
-  );
-  
-  if (!RESOLVED_BACKEND_URL) {
-    console.warn('[Settings] Backend URL no encontrada, usando fallback DEFAULT_BACKEND_URL');
-    return DEFAULT_BACKEND_URL;
-  }
-  return RESOLVED_BACKEND_URL.replace(/\/$/, '');
+  return getBackendBaseUrl();
 }
 
 export default function SettingsScreen() {
