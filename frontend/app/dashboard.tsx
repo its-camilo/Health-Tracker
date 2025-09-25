@@ -1,23 +1,74 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  ScrollView,
-  Alert,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    Alert,
+    SafeAreaView,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
 import ProtectedRoute from '../components/ProtectedRoute';
+import { getBackendBaseUrl } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
+
+interface DashboardData {
+  total_documents: number;
+  analyzed_documents: number;
+  recent_analyses: {
+    id: string;
+    filename: string;
+    type: string;
+    created_at: string;
+    analysis: any;
+  }[];
+}
 
 export default function DashboardScreen() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const router = useRouter();
-  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const loadDashboard = useCallback(async () => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${getBackendBaseUrl()}/api/dashboard`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDashboardData(data);
+      } else {
+        console.error('Error loading dashboard:', response.status);
+        // Fallback a datos vacíos
+        setDashboardData({
+          total_documents: 0,
+          analyzed_documents: 0,
+          recent_analyses: []
+        });
+      }
+    } catch (error) {
+      console.error('Error loading dashboard:', error);
+      // Fallback a datos vacíos
+      setDashboardData({
+        total_documents: 0,
+        analyzed_documents: 0,
+        recent_analyses: []
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
     console.log('Dashboard useEffect - user:', user);
@@ -28,22 +79,7 @@ export default function DashboardScreen() {
     }
     loadDashboard();
     // Nota: añadimos 'router' a las dependencias para satisfacer la regla react-hooks/exhaustive-deps.
-  }, [user, router]);
-
-  const loadDashboard = async () => {
-    try {
-      // Mock data for now
-      setDashboardData({
-        total_documents: 0,
-        analyzed_documents: 0,
-        recent_analyses: []
-      });
-    } catch (error) {
-      console.error('Error loading dashboard:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [user, router, loadDashboard]);
 
   const handleLogout = async () => {
     Alert.alert(
@@ -154,11 +190,42 @@ export default function DashboardScreen() {
           <View style={styles.recentContainer}>
             <Text style={styles.sectionTitle}>Análisis Recientes</Text>
             
-            {dashboardData?.recent_analyses?.length > 0 ? (
-              dashboardData.recent_analyses.map((analysis: any, index: number) => (
-                <View key={index} style={styles.analysisCard}>
-                  <Text style={styles.analysisTitle}>{analysis.filename}</Text>
-                  <Text style={styles.analysisDate}>{analysis.created_at}</Text>
+            {dashboardData && dashboardData.recent_analyses && dashboardData.recent_analyses.length > 0 ? (
+              dashboardData.recent_analyses.map((analysis, index) => (
+                <View key={analysis.id || index} style={styles.analysisCard}>
+                  <View style={styles.analysisHeader}>
+                    <Ionicons 
+                      name={analysis.type === 'image' ? 'image' : 'document-text'} 
+                      size={24} 
+                      color="#4c669f" 
+                    />
+                    <View style={styles.analysisInfo}>
+                      <Text style={styles.analysisTitle}>{analysis.filename}</Text>
+                      <Text style={styles.analysisDate}>
+                        {new Date(analysis.created_at).toLocaleDateString('es-ES')}
+                      </Text>
+                    </View>
+                  </View>
+                  
+                  {analysis.analysis && (
+                    <View style={styles.analysisResults}>
+                      {analysis.type === 'image' && analysis.analysis.hair_count_estimate && (
+                        <Text style={styles.analysisDetail}>
+                          Cabellos estimados: {analysis.analysis.hair_count_estimate}
+                        </Text>
+                      )}
+                      {analysis.analysis.recommendations && analysis.analysis.recommendations.length > 0 && (
+                        <Text style={styles.analysisDetail}>
+                          Recomendaciones: {analysis.analysis.recommendations[0]}
+                        </Text>
+                      )}
+                      {analysis.analysis.main_findings && analysis.analysis.main_findings.length > 0 && (
+                        <Text style={styles.analysisDetail}>
+                          Hallazgos: {analysis.analysis.main_findings[0]}
+                        </Text>
+                      )}
+                    </View>
+                  )}
                 </View>
               ))
             ) : (
@@ -318,6 +385,15 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  analysisHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  analysisInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
   analysisTitle: {
     fontSize: 16,
     fontWeight: '600',
@@ -327,6 +403,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginTop: 4,
+  },
+  analysisResults: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  analysisDetail: {
+    fontSize: 14,
+    color: '#555',
+    marginBottom: 4,
+    lineHeight: 20,
   },
   emptyState: {
     alignItems: 'center',

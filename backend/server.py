@@ -1,24 +1,25 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Form
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
-from passlib.hash import bcrypt
-from jose import JWTError, jwt
-import os
+import base64
+import io
+import json
 import logging
-from pathlib import Path
-from pydantic import BaseModel, Field, EmailStr
-from typing import List, Optional, Dict, Any
+import os
 import uuid
 from datetime import datetime, timedelta
-import base64
-import json
-import asyncio
-import requests
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import PyPDF2
-import io
+import requests
+from dotenv import load_dotenv
+from fastapi import (APIRouter, Depends, FastAPI, File, Form, HTTPException,
+                     UploadFile)
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from jose import JWTError, jwt
+from motor.motor_asyncio import AsyncIOMotorClient
+from passlib.hash import bcrypt
+from pydantic import BaseModel, EmailStr, Field
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
+from starlette.middleware.cors import CORSMiddleware
 
 # Load environment variables
 ROOT_DIR = Path(__file__).parent
@@ -44,7 +45,7 @@ JWT_ALGORITHM=HS256
 
 # MongoDB connection with fallback to in-memory storage
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-client: Optional[AsyncIOMotorClient] = None
+client = None
 db = None
 
 # Try to connect to MongoDB, fallback to in-memory storage
@@ -66,7 +67,8 @@ records_storage = {}
 documents_storage = {}
 
 # JWT Configuration
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-key-change-in-production")
+JWT_SECRET_KEY = os.environ.get(
+    "JWT_SECRET_KEY", "dev-jwt-secret-key-change-in-production")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_HOURS = 24
 
@@ -82,26 +84,36 @@ api_router = APIRouter(prefix="/api")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
+    allow_origins=[
+        "https://rxqc8sy-anonymous-8081.exp.direct",  # Expo web
+        "http://localhost:8081",  # Local development
+        "http://localhost:3000",  # React dev server
+        "*"  # Allow all origins for development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Models
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     name: str
     password: str
+
 
 class UserRegistration(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=6)
 
+
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
 
 class User(BaseModel):
     id: str
@@ -109,19 +121,23 @@ class User(BaseModel):
     name: str
     gemini_api_key: Optional[str] = None
 
+
 class UserResponse(BaseModel):
     id: str
     email: str
     name: str
     has_gemini_key: bool
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
 
+
 class GeminiKeyUpdate(BaseModel):
     gemini_api_key: str
+
 
 class HealthDocument(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -132,9 +148,11 @@ class HealthDocument(BaseModel):
     analysis_result: Optional[Dict[str, Any]] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+
 class AnalysisRequest(BaseModel):
     document_id: str
     analysis_type: str  # "capilar", "general"
+
 
 class HairAnalysisResult(BaseModel):
     hair_count_estimate: Optional[int] = None
@@ -145,6 +163,7 @@ class HairAnalysisResult(BaseModel):
     recommendations: List[str] = []
     confidence_score: Optional[float] = None
 
+
 class HealthRecord(BaseModel):
     id: Optional[str] = None
     user_id: str
@@ -153,18 +172,24 @@ class HealthRecord(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 # Utility functions
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hash(password)
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.verify(plain_password, hashed_password)
+
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY,
+                             algorithm=JWT_ALGORITHM)
     return encoded_jwt
+
 
 def sanitize_user(doc: dict) -> dict:
     """Return a user object safe for API responses."""
@@ -175,32 +200,36 @@ def sanitize_user(doc: dict) -> dict:
         "has_gemini_key": bool(doc.get("gemini_api_key")),
     }
 
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(credentials.credentials,
+                             JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=401, detail="Token inválido")
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
-    
+
     # Try MongoDB first, then fallback to memory storage
     user_data = None
     if db is not None:
         user_data = await db.users.find_one({"id": user_id})
-    
+
     if user_data is None and user_id in users_storage:
         user_data = users_storage[user_id]
-        
+
     if user_data is None:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
-    
+
     return User(**user_data)
+
 
 async def get_current_user_basic(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """Basic user authentication for backward compatibility"""
     try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(credentials.credentials,
+                             JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401, detail="Token inválido")
@@ -209,12 +238,14 @@ async def get_current_user_basic(credentials: HTTPAuthorizationCredentials = Dep
         raise HTTPException(status_code=401, detail="Token inválido")
 
 # AI Analysis Functions with integrated Gemini API
+
+
 async def analyze_hair_with_gemini(api_key: str, image_base64: str) -> HairAnalysisResult:
     """Analyze hair image using Google Gemini API."""
     try:
         # Google AI Studio API endpoint
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        
+
         hair_analysis_prompt = """
 Analiza esta imagen del cuero cabelludo y proporciona un análisis detallado de salud capilar.
 
@@ -254,15 +285,16 @@ Responde en formato JSON:
 
         # Make the API request
         headers = {"Content-Type": "application/json"}
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response = requests.post(url, headers=headers,
+                                 json=payload, timeout=30)
         response.raise_for_status()
 
         result = response.json()
-        
+
         # Extract and parse the generated text
         if "candidates" in result and len(result["candidates"]) > 0:
             generated_text = result["candidates"][0]["content"]["parts"][0]["text"]
-            
+
             # Try to parse JSON response
             try:
                 # Clean the response and extract JSON
@@ -271,33 +303,38 @@ Responde en formato JSON:
                 if json_start != -1 and json_end != -1:
                     json_text = generated_text[json_start:json_end]
                     analysis_data = json.loads(json_text)
-                    
+
                     return HairAnalysisResult(
-                        hair_count_estimate=analysis_data.get("hair_count_estimate"),
+                        hair_count_estimate=analysis_data.get(
+                            "hair_count_estimate"),
                         baldness_zones=analysis_data.get("baldness_zones", []),
-                        alopecia_risk_3_years=analysis_data.get("alopecia_risk_3_years"),
-                        alopecia_risk_5_years=analysis_data.get("alopecia_risk_5_years"),
-                        alopecia_risk_10_years=analysis_data.get("alopecia_risk_10_years"),
-                        recommendations=analysis_data.get("recommendations", []),
+                        alopecia_risk_3_years=analysis_data.get(
+                            "alopecia_risk_3_years"),
+                        alopecia_risk_5_years=analysis_data.get(
+                            "alopecia_risk_5_years"),
+                        alopecia_risk_10_years=analysis_data.get(
+                            "alopecia_risk_10_years"),
+                        recommendations=analysis_data.get(
+                            "recommendations", []),
                         confidence_score=analysis_data.get("confidence_score")
                     )
             except json.JSONDecodeError:
                 # Fallback if JSON parsing fails
                 pass
-                
+
             # Fallback response if JSON parsing failed
             return HairAnalysisResult(
                 hair_count_estimate=0,
                 baldness_zones=["Análisis visual"],
                 alopecia_risk_3_years="medio",
-                alopecia_risk_5_years="medio", 
+                alopecia_risk_5_years="medio",
                 alopecia_risk_10_years="alto",
                 recommendations=[f"Análisis: {generated_text[:200]}..."],
                 confidence_score=0.7
             )
         else:
             raise ValueError("No response from Gemini API")
-            
+
     except requests.exceptions.RequestException as e:
         logging.error(f"HTTP error calling Gemini API: {str(e)}")
         return HairAnalysisResult(
@@ -315,18 +352,19 @@ Responde en formato JSON:
             hair_count_estimate=0,
             baldness_zones=["Error en análisis"],
             alopecia_risk_3_years="desconocido",
-            alopecia_risk_5_years="desconocido", 
+            alopecia_risk_5_years="desconocido",
             alopecia_risk_10_years="desconocido",
             recommendations=[f"Error en análisis: {str(e)}"],
             confidence_score=0.0
         )
+
 
 async def analyze_document_with_gemini(api_key: str, text_content: str, document_type: str) -> Dict[str, Any]:
     """Analyze document content using Google Gemini API."""
     try:
         # Google AI Studio API endpoint
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        
+
         analysis_prompt = f"""
 Analiza el siguiente texto de un documento médico relacionado con salud capilar:
 
@@ -355,15 +393,16 @@ Responde en formato JSON:
 
         # Make the API request
         headers = {"Content-Type": "application/json"}
-        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response = requests.post(url, headers=headers,
+                                 json=payload, timeout=30)
         response.raise_for_status()
 
         result = response.json()
-        
+
         # Extract the generated text
         if "candidates" in result and len(result["candidates"]) > 0:
             generated_text = result["candidates"][0]["content"]["parts"][0]["text"]
-            
+
             # Try to parse JSON response
             try:
                 json_start = generated_text.find('{')
@@ -373,7 +412,7 @@ Responde en formato JSON:
                     return json.loads(json_text)
             except json.JSONDecodeError:
                 pass
-            
+
             # Fallback if JSON parsing fails
             return {
                 "main_findings": ["Documento procesado"],
@@ -383,7 +422,7 @@ Responde en formato JSON:
             }
         else:
             raise ValueError("No response from Gemini API")
-            
+
     except requests.exceptions.RequestException as e:
         logging.error(f"HTTP error calling Gemini API: {str(e)}")
         return {
@@ -402,6 +441,8 @@ Responde en formato JSON:
         }
 
 # Health check endpoints
+
+
 @app.get("/health")
 async def health_check():
     return {
@@ -411,6 +452,7 @@ async def health_check():
         "database": "connected" if db is not None else "in_memory",
         "version": "2.0.0"
     }
+
 
 @app.get("/")
 async def root():
@@ -422,6 +464,8 @@ async def root():
     }
 
 # Authentication endpoints (both with and without /api prefix for compatibility)
+
+
 @api_router.post("/auth/register", response_model=Token)
 @app.post("/auth/register")
 async def register(user: UserRegistration):
@@ -437,14 +481,15 @@ async def register(user: UserRegistration):
                 if stored_user.get("email") == user.email:
                     user_exists = True
                     break
-        
+
         if user_exists:
-            raise HTTPException(status_code=400, detail="El email ya está registrado")
-        
+            raise HTTPException(
+                status_code=400, detail="El email ya está registrado")
+
         # Create new user
         user_id = str(uuid.uuid4())
         hashed_password = hash_password(user.password)
-        
+
         user_data = {
             "id": user_id,
             "email": user.email,
@@ -453,27 +498,56 @@ async def register(user: UserRegistration):
             "created_at": datetime.utcnow(),
             "has_gemini_key": False
         }
-        
+
         # Store in database or memory
         if db is not None:
             await db.users.insert_one(user_data)
         else:
             users_storage[user_id] = user_data
-        
+
         # Create access token
         access_token = create_access_token(data={"sub": user_id})
-        
+
         user_response = UserResponse(
             id=user_id,
             email=user.email,
             name=user.username,
             has_gemini_key=False
         )
-        
+
         return Token(access_token=access_token, user=user_response)
-        
+
+    except (PyMongoError, ServerSelectionTimeoutError) as e:
+        logging.warning(f"A MongoDB error occurred during registration: {e}")
+        # Fallback to in-memory storage if DB operation fails
+        user_exists = any(u.get("email") ==
+                          user.email for u in users_storage.values())
+        if user_exists:
+            raise HTTPException(
+                status_code=400, detail="El email ya está registrado")
+
+        user_id = str(uuid.uuid4())
+        hashed_password = hash_password(user.password)
+        user_data = {
+            "id": user_id,
+            "email": user.email,
+            "name": user.username,
+            "password": hashed_password,
+            "created_at": datetime.utcnow(),
+            "has_gemini_key": False
+        }
+        users_storage[user_id] = user_data
+
+        access_token = create_access_token(data={"sub": user_id})
+        user_response = UserResponse(
+            id=user_id, email=user.email, name=user.username, has_gemini_key=False)
+        return Token(access_token=access_token, user=user_response)
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Registration error: {e}")
+        logging.error(
+            f"An unexpected error occurred during registration: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error de registro: {e}")
+
 
 @api_router.post("/auth/login", response_model=Token)
 @app.post("/auth/login")
@@ -488,60 +562,72 @@ async def login(user_data: UserLogin):
             if stored_user.get("email") == user_data.email:
                 user_doc = stored_user
                 break
-    
+
     if not user_doc:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    
+
     # Verify password
     if not verify_password(user_data.password, user_doc["password"]):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    
+
     # Create access token
     access_token = create_access_token(data={"sub": user_doc["id"]})
-    
+
     user_response = UserResponse(
         id=user_doc["id"],
         email=user_doc["email"],
         name=user_doc["name"],
         has_gemini_key=bool(user_doc.get("gemini_api_key"))
     )
-    
+
     return Token(access_token=access_token, user=user_response)
+
 
 @api_router.get("/auth/me")
 @app.get("/auth/me")
 async def auth_me(current_user: str = Depends(get_current_user_basic)):
     # Get user data
     user_doc = None
-    if db is not None:
-        user_doc = await db.users.find_one({"id": current_user})
-    else:
+    try:
+        if db is not None:
+            user_doc = await db.users.find_one({"id": current_user})
+    except (PyMongoError, ServerSelectionTimeoutError):
+        # Fallback to memory storage if DB is unavailable
+        user_doc = None
+
+    if not user_doc:
         user_doc = users_storage.get(current_user)
-    
+
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return sanitize_user(user_doc)
+
 
 @api_router.put("/auth/gemini-key")
 @app.put("/auth/gemini-key")
 async def set_gemini_key(
-    payload: dict,
+    payload: GeminiKeyUpdate,
     current_user: str = Depends(get_current_user_basic),
 ):
-    gemini_key = payload.get("gemini_api_key")
+    gemini_key = payload.gemini_api_key
     if not gemini_key:
         raise HTTPException(status_code=400, detail="gemini_api_key requerido")
-    
+
     # Update user with Gemini API key
     if db is not None:
-        await db.users.update_one(
-            {"id": current_user},
-            {"$set": {"has_gemini_key": True, "gemini_api_key": gemini_key}},
-        )
-        doc = await db.users.find_one({"id": current_user})
-        return {"status": "ok", "user": sanitize_user(doc)}
-    
+        try:
+            await db.users.update_one(
+                {"id": current_user},
+                {"$set": {"has_gemini_key": True, "gemini_api_key": gemini_key}},
+            )
+            doc = await db.users.find_one({"id": current_user})
+            if doc:
+                return {"status": "ok", "user": sanitize_user(doc)}
+        except Exception as e:
+            logging.error("MongoDB error updating Gemini key: %s", str(e))
+            # Fallback to in-memory storage
+
     # Update in-memory storage
     if current_user in users_storage:
         users_storage[current_user]["has_gemini_key"] = True
@@ -550,10 +636,12 @@ async def set_gemini_key(
             "status": "ok",
             "user": sanitize_user(users_storage[current_user]),
         }
-    
+
     raise HTTPException(status_code=404, detail="User not found")
 
 # Health records endpoints
+
+
 @api_router.get("/records")
 @app.get("/records")
 async def get_records(current_user: str = Depends(get_current_user_basic)):
@@ -569,6 +657,7 @@ async def get_records(current_user: str = Depends(get_current_user_basic)):
         user_records = records_storage.get(current_user, [])
         return user_records
 
+
 @api_router.post("/records")
 @app.post("/records")
 async def create_record(
@@ -577,7 +666,7 @@ async def create_record(
 ):
     record.user_id = current_user
     record.id = str(uuid.uuid4())
-    
+
     if db is not None:
         # Store in database
         record_dict = record.model_dump()
@@ -592,6 +681,8 @@ async def create_record(
         return {"status": "ok", "record": record_dict}
 
 # File upload endpoint
+
+
 @api_router.post("/upload")
 @app.post("/upload")
 async def upload_file(
@@ -601,11 +692,11 @@ async def upload_file(
     try:
         # Read file content
         contents = await file.read()
-        
+
         # Basic file validation
         if len(contents) > 10 * 1024 * 1024:  # 10MB limit
             raise HTTPException(status_code=413, detail="File too large")
-        
+
         # For development, we'll just return a success response
         # In production, you'd want to store this properly
         file_info = {
@@ -614,17 +705,19 @@ async def upload_file(
             "size": len(contents),
             "uploaded_at": datetime.utcnow().isoformat()
         }
-        
+
         return {
-            "status": "ok", 
+            "status": "ok",
             "message": "File uploaded successfully",
             "file": file_info
         }
-        
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
 
 # Document management endpoints with AI analysis
+
+
 @api_router.post("/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -634,10 +727,10 @@ async def upload_document(
     try:
         if file.size > 10 * 1024 * 1024:  # 10MB limit
             raise HTTPException(status_code=413, detail="Archivo muy grande")
-        
+
         # Read file content
         content_bytes = await file.read()
-        
+
         # Process content based on file type
         content = ""
         if document_type == "pdf":
@@ -648,7 +741,7 @@ async def upload_document(
         else:
             # For images, store as base64
             content = base64.b64encode(content_bytes).decode('utf-8')
-        
+
         # Create document record
         document = HealthDocument(
             user_id=current_user.id,
@@ -656,9 +749,9 @@ async def upload_document(
             original_filename=file.filename,
             content=content
         )
-        
+
         document_dict = document.model_dump()
-        
+
         # Store document
         if db is not None:
             await db.health_documents.insert_one(document_dict)
@@ -666,16 +759,18 @@ async def upload_document(
             if current_user.id not in documents_storage:
                 documents_storage[current_user.id] = []
             documents_storage[current_user.id].append(document_dict)
-        
+
         return {
             "id": document.id,
             "filename": file.filename,
             "type": document_type,
             "message": "Documento subido correctamente"
         }
-        
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al subir documento: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error al subir documento: {str(e)}")
+
 
 @api_router.get("/documents")
 async def get_documents(current_user: User = Depends(get_current_user)):
@@ -683,7 +778,7 @@ async def get_documents(current_user: User = Depends(get_current_user)):
         documents = await db.health_documents.find({"user_id": current_user.id}).to_list(1000)
     else:
         documents = documents_storage.get(current_user.id, [])
-    
+
     return [
         {
             "id": doc["id"],
@@ -695,6 +790,7 @@ async def get_documents(current_user: User = Depends(get_current_user)):
         for doc in documents
     ]
 
+
 @api_router.post("/analysis/hair")
 async def analyze_hair(
     request: AnalysisRequest,
@@ -703,10 +799,10 @@ async def analyze_hair(
     # Check if user has Gemini API key
     if not current_user.gemini_api_key:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Necesitas configurar tu API key de Gemini primero"
         )
-    
+
     # Get document
     document = None
     if db is not None:
@@ -720,27 +816,27 @@ async def analyze_hair(
             if doc["id"] == request.document_id:
                 document = doc
                 break
-    
+
     if not document:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    
+
     if document["document_type"] != "image":
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="El análisis capilar solo funciona con imágenes"
         )
-    
+
     try:
         # Analyze with Gemini AI
         result = await analyze_hair_with_gemini(
             current_user.gemini_api_key,
             document["content"]
         )
-        
+
         # Save analysis result
         analysis_data = result.model_dump()
         update_data = {"analysis_result": analysis_data}
-        
+
         if db is not None:
             await db.health_documents.update_one(
                 {"id": request.document_id},
@@ -753,14 +849,16 @@ async def analyze_hair(
                 if doc["id"] == request.document_id:
                     user_docs[i].update(update_data)
                     break
-        
+
         return {
             "analysis_result": analysis_data,
             "message": "Análisis completado exitosamente"
         }
-        
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error en análisis: {str(e)}")
+
 
 @api_router.post("/analysis/document")
 async def analyze_document(
@@ -770,10 +868,10 @@ async def analyze_document(
     # Check if user has Gemini API key
     if not current_user.gemini_api_key:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Necesitas configurar tu API key de Gemini primero"
         )
-    
+
     # Get document
     document = None
     if db is not None:
@@ -787,16 +885,16 @@ async def analyze_document(
             if doc["id"] == request.document_id:
                 document = doc
                 break
-    
+
     if not document:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    
+
     if document["document_type"] != "pdf":
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="El análisis de documentos solo funciona con PDFs"
         )
-    
+
     try:
         # Analyze with Gemini AI
         result = await analyze_document_with_gemini(
@@ -804,10 +902,10 @@ async def analyze_document(
             document["content"],
             document["document_type"]
         )
-        
+
         # Save analysis result
         update_data = {"analysis_result": result}
-        
+
         if db is not None:
             await db.health_documents.update_one(
                 {"id": request.document_id},
@@ -820,16 +918,19 @@ async def analyze_document(
                 if doc["id"] == request.document_id:
                     user_docs[i].update(update_data)
                     break
-        
+
         return {
             "analysis_result": result,
             "message": "Análisis de documento completado"
         }
-        
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error en análisis: {str(e)}")
 
 # Health dashboard endpoint
+
+
 @api_router.get("/dashboard")
 async def get_dashboard(current_user: User = Depends(get_current_user)):
     # Get recent documents and analyses
@@ -840,10 +941,12 @@ async def get_dashboard(current_user: User = Depends(get_current_user)):
         ).sort("created_at", -1).limit(10).to_list(10)
     else:
         user_docs = documents_storage.get(current_user.id, [])
-        documents = sorted(user_docs, key=lambda x: x.get("created_at", datetime.utcnow()), reverse=True)[:10]
-    
-    analyzed_documents = [doc for doc in documents if doc.get("analysis_result")]
-    
+        documents = sorted(user_docs, key=lambda x: x.get(
+            "created_at", datetime.utcnow()), reverse=True)[:10]
+
+    analyzed_documents = [
+        doc for doc in documents if doc.get("analysis_result")]
+
     return {
         "total_documents": len(documents),
         "analyzed_documents": len(analyzed_documents),
@@ -868,6 +971,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+
 @app.on_event("startup")
 async def startup_event():
     logging.info("Health Tracker API - Unified started successfully")
@@ -875,6 +979,7 @@ async def startup_event():
         logging.info("Connected to MongoDB")
     else:
         logging.info("Using in-memory storage (MongoDB unavailable)")
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

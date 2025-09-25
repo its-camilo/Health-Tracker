@@ -1,39 +1,240 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  TouchableOpacity,
-  Alert,
-  ScrollView,
-} from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { getBackendBaseUrl } from '../constants/api';
+import { useAuth } from '../context/AuthContext';
+
+interface UploadedFile {
+  id: string;
+  filename: string;
+  type: 'image' | 'pdf';
+  created_at: string;
+  has_analysis: boolean;
+}
 
 export default function UploadScreen() {
-  // Eliminamos setUploading porque no se usaba (warning ESLint)
-  const [uploading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [analyzing, setAnalyzing] = useState<string | null>(null);
   const router = useRouter();
+  const { token, user } = useAuth();
 
-  const showImageOptions = () => {
+  useEffect(() => {
+    loadUploadedFiles();
+  }, []);
+
+  const loadUploadedFiles = async () => {
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${getBackendBaseUrl()}/api/documents`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.ok) {
+        const files = await response.json();
+        setUploadedFiles(files);
+      }
+    } catch (error) {
+      console.error('Error loading files:', error);
+    }
+  };
+
+  const requestPermissions = async () => {
+    if (Platform.OS !== 'web') {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permisos requeridos',
+          'Se necesitan permisos de galería para subir imágenes.'
+        );
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const showImageOptions = async () => {
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
     Alert.alert(
-      'Subir Imagen',
-      'Esta funcionalidad estará disponible pronto. Por ahora puedes usar la cámara o galería de tu dispositivo.',
+      'Subir Imagen del Cabello',
+      'Elige una opción:',
       [
-        { text: 'Entendido', style: 'default' },
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Cámara',
+          onPress: () => pickImageFromCamera(),
+        },
+        {
+          text: 'Galería',
+          onPress: () => pickImageFromGallery(),
+        },
       ]
     );
   };
 
-  const showDocumentPicker = () => {
-    Alert.alert(
-      'Subir PDF',
-      'Esta funcionalidad estará disponible pronto. Por ahora puedes seleccionar documentos PDF desde tu dispositivo.',
-      [
-        { text: 'Entendido', style: 'default' },
-      ]
-    );
+  const pickImageFromCamera = async () => {
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadFile(result.assets[0], 'image');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo tomar la foto');
+    }
+  };
+
+  const pickImageFromGallery = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadFile(result.assets[0], 'image');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo seleccionar la imagen');
+    }
+  };
+
+  const showDocumentPicker = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'application/pdf',
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        await uploadFile(result.assets[0], 'pdf');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo seleccionar el documento');
+    }
+  };
+
+  const uploadFile = async (file: any, documentType: 'image' | 'pdf') => {
+    if (!token) {
+      Alert.alert('Error', 'Debes iniciar sesión para subir archivos');
+      return;
+    }
+
+    setUploading(true);
+    
+    try {
+      const formData = new FormData();
+      
+      // Crear objeto File para web o usar directamente para mobile
+      if (Platform.OS === 'web') {
+        const response = await fetch(file.uri);
+        const blob = await response.blob();
+        formData.append('file', blob, file.fileName || `file.${documentType === 'image' ? 'jpg' : 'pdf'}`);
+      } else {
+        formData.append('file', {
+          uri: file.uri,
+          type: documentType === 'image' ? 'image/jpeg' : 'application/pdf',
+          name: file.fileName || file.name || `file.${documentType === 'image' ? 'jpg' : 'pdf'}`,
+        } as any);
+      }
+      
+      formData.append('document_type', documentType);
+
+      const response = await fetch(`${getBackendBaseUrl()}/api/documents/upload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData,
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        Alert.alert('Éxito', 'Archivo subido correctamente');
+        await loadUploadedFiles();
+        
+        // Auto-analizar si el usuario tiene API key configurada
+        if (user?.has_gemini_key) {
+          setTimeout(() => {
+            analyzeFile(result.id, documentType);
+          }, 1000);
+        }
+      } else {
+        const error = await response.json();
+        Alert.alert('Error', error.detail || 'Error al subir archivo');
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      Alert.alert('Error', 'Error al subir archivo');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const analyzeFile = async (fileId: string, documentType: 'image' | 'pdf') => {
+    if (!token) return;
+
+    setAnalyzing(fileId);
+    
+    try {
+      const endpoint = documentType === 'image' ? '/api/analysis/hair' : '/api/analysis/document';
+      const analysisType = documentType === 'image' ? 'capilar' : 'general';
+      
+      const response = await fetch(`${getBackendBaseUrl()}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          document_id: fileId,
+          analysis_type: analysisType,
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        Alert.alert('Análisis Completado', result.message);
+        await loadUploadedFiles();
+      } else {
+        const error = await response.json();
+        Alert.alert('Error de Análisis', error.detail || 'Error al analizar archivo');
+      }
+    } catch (error) {
+      console.error('Analysis error:', error);
+      Alert.alert('Error', 'Error al analizar archivo');
+    } finally {
+      setAnalyzing(null);
+    }
   };
 
   return (
@@ -51,21 +252,23 @@ export default function UploadScreen() {
         </View>
 
         {/* API Key Warning */}
-        <View style={styles.warningCard}>
-          <Ionicons name="warning" size={24} color="#ff9500" />
-          <View style={styles.warningContent}>
-            <Text style={styles.warningTitle}>Configuración requerida</Text>
-            <Text style={styles.warningText}>
-              Configura tu API key de Gemini para realizar análisis
-            </Text>
+        {!user?.has_gemini_key && (
+          <View style={styles.warningCard}>
+            <Ionicons name="warning" size={24} color="#ff9500" />
+            <View style={styles.warningContent}>
+              <Text style={styles.warningTitle}>Configuración requerida</Text>
+              <Text style={styles.warningText}>
+                Configura tu API key de Gemini para realizar análisis
+              </Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.configButton}
+              onPress={() => router.push('/settings')}
+            >
+              <Text style={styles.configButtonText}>Configurar</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity 
-            style={styles.configButton}
-            onPress={() => router.push('/settings')}
-          >
-            <Text style={styles.configButtonText}>Configurar</Text>
-          </TouchableOpacity>
-        </View>
+        )}
 
         {/* Upload Options */}
         <View style={styles.uploadSection}>
@@ -79,6 +282,7 @@ export default function UploadScreen() {
             <Ionicons name="camera" size={32} color="#4c669f" />
             <Text style={styles.uploadButtonText}>Subir Foto del Cabello</Text>
             <Text style={styles.uploadButtonSubtext}>Para análisis capilar con IA</Text>
+            {uploading && <ActivityIndicator style={{ marginTop: 10 }} />}
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -89,20 +293,62 @@ export default function UploadScreen() {
             <Ionicons name="document-text" size={32} color="#4c669f" />
             <Text style={styles.uploadButtonText}>Subir Documento PDF</Text>
             <Text style={styles.uploadButtonSubtext}>Análisis de resultados médicos</Text>
+            {uploading && <ActivityIndicator style={{ marginTop: 10 }} />}
           </TouchableOpacity>
         </View>
 
-        {/* Empty State */}
+        {/* Files Section */}
         <View style={styles.filesSection}>
           <Text style={styles.sectionTitle}>Archivos Subidos</Text>
           
-          <View style={styles.emptyState}>
-            <Ionicons name="folder-open-outline" size={48} color="#ccc" />
-            <Text style={styles.emptyText}>No hay archivos subidos</Text>
-            <Text style={styles.emptySubtext}>
-              Sube una foto o documento para comenzar
-            </Text>
-          </View>
+          {uploadedFiles.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="folder-open-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyText}>No hay archivos subidos</Text>
+              <Text style={styles.emptySubtext}>
+                Sube una foto o documento para comenzar
+              </Text>
+            </View>
+          ) : (
+            uploadedFiles.map((file) => (
+              <View key={file.id} style={styles.fileCard}>
+                <View style={styles.fileInfo}>
+                  <Ionicons 
+                    name={file.type === 'image' ? 'image' : 'document-text'} 
+                    size={24} 
+                    color="#4c669f" 
+                  />
+                  <View style={styles.fileDetails}>
+                    <Text style={styles.fileName}>{file.filename}</Text>
+                    <Text style={styles.fileType}>
+                      {file.type === 'image' ? 'Imagen' : 'PDF'} • {new Date(file.created_at).toLocaleDateString()}
+                    </Text>
+                  </View>
+                </View>
+                
+                {file.has_analysis ? (
+                  <View style={styles.analyzedBadge}>
+                    <Ionicons name="checkmark-circle" size={16} color="#155724" />
+                    <Text style={styles.analyzedText}>Analizado</Text>
+                  </View>
+                ) : user?.has_gemini_key ? (
+                  <TouchableOpacity 
+                    style={styles.analyzeButton}
+                    onPress={() => analyzeFile(file.id, file.type)}
+                    disabled={analyzing === file.id}
+                  >
+                    {analyzing === file.id ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <Text style={styles.analyzeButtonText}>Analizar</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.needsConfigText}>Configura API</Text>
+                )}
+              </View>
+            ))
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -305,5 +551,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#4c669f',
     fontWeight: '600',
+  },
+  needsConfigText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
   },
 });
