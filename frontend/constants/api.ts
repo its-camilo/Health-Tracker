@@ -5,7 +5,7 @@ import Constants from 'expo-constants';
  * - true  → use the Codespaces backend URL
  * - false → use the local backend URL
  */
-export const IS_CODESPACES = true;
+export const IS_CODESPACES = false;
 
 export const CODESPACES_BACKEND_URL = 'https://fantastic-train-rxwxqr7g55xcww9v-8000.app.github.dev';
 export const LOCAL_BACKEND_URL = 'http://127.0.0.1:8000';
