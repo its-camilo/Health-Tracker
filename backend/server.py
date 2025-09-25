@@ -48,18 +48,10 @@ mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 client = None
 db = None
 
-# Try to connect to MongoDB, fallback to in-memory storage
-try:
-    client = AsyncIOMotorClient(
-        mongo_url, serverSelectionTimeoutMS=1000
-    )  # 1s timeout
-    db_name = os.environ.get('DB_NAME', 'health_tracker')
-    db = client[db_name]
-    logging.info("MongoDB connected successfully")
-except (ServerSelectionTimeoutError, PyMongoError) as e:
-    logging.warning(f"MongoDB connection failed, using in-memory storage: {e}")
-    client = None
-    db = None
+# Force in-memory storage for now (MongoDB not available in this environment)
+logging.warning("Using in-memory storage (MongoDB disabled for this environment)")
+client = None
+db = None
 
 # In-memory storage for development/fallback
 users_storage = {}
