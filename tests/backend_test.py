@@ -13,7 +13,7 @@ import os
 import sys
 
 # Configuration
-BASE_URL = "https://health-tracker-129.preview.emergentagent.com/api"
+BASE_URL = "http://localhost:8000/api"
 TEST_USER_EMAIL = "maria.gonzalez@example.com"
 TEST_USER_PASSWORD = "SecurePass123!"
 TEST_USER_NAME = "María González"
@@ -38,9 +38,9 @@ class HealthAppTester:
         print("🔐 Testing User Registration...")
         
         payload = {
+            "username": TEST_USER_NAME.replace(" ", "").lower(),
             "email": TEST_USER_EMAIL,
-            "password": TEST_USER_PASSWORD,
-            "name": TEST_USER_NAME
+            "password": TEST_USER_PASSWORD
         }
         
         try:
@@ -240,9 +240,9 @@ class HealthAppTester:
             
             if response.status_code == 200:
                 response_data = response.json()
-                required_fields = ["document_id", "filename", "type", "message"]
+                required_fields = ["id", "filename", "type", "message"]
                 if all(field in response_data for field in required_fields):
-                    self.document_id = response_data["document_id"]
+                    self.document_id = response_data["id"]
                     self.log_test(
                         "Document Upload", 
                         True, 
