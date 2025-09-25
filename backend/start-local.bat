@@ -32,8 +32,8 @@ echo.
 echo 🛑 Presiona Ctrl+C para detener el servidor
 echo.
 
-REM Iniciar el servidor (por defecto usar server_dev para desarrollo local)
-python -m uvicorn server_dev:app --host 0.0.0.0 --port 8000 --reload
+REM Iniciar el servidor unificado
+python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 if errorlevel 1 (
     echo.

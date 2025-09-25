@@ -48,8 +48,8 @@ echo.
 echo 🛑 Presiona Ctrl+C para detener el servidor
 echo.
 
-REM Iniciar servidor de desarrollo (sin MongoDB)
-python -m uvicorn server_dev:app --host 0.0.0.0 --port 8000 --reload
+REM Iniciar servidor unificado (detecta automáticamente MongoDB)
+python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 
 if errorlevel 1 (
     echo.

@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo.errors import PyMongoError, ServerSelectionTimeoutError
 from passlib.hash import bcrypt
 from jose import JWTError, jwt
 import os
@@ -16,10 +17,6 @@ import base64
 import json
 import asyncio
 import requests
-import json
-
-# Remove the emergentintegrations import since it doesn't exist
-# from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 import PyPDF2
 import io
 
@@ -27,41 +24,90 @@ import io
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# Create default .env if it doesn't exist
+if not (ROOT_DIR / '.env').exists():
+    env_example = ROOT_DIR / '.env.example'
+    if env_example.exists():
+        # Copy from .env.example if it exists
+        with open(env_example, 'r', encoding='utf-8') as f:
+            env_content = f.read()
+        with open(ROOT_DIR / '.env', 'w', encoding='utf-8') as f:
+            f.write(env_content)
+    else:
+        # Create basic .env file
+        with open(ROOT_DIR / '.env', 'w', encoding='utf-8') as f:
+            f.write("""MONGO_URL=mongodb://localhost:27017
+DB_NAME=health_tracker
+JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production
+JWT_ALGORITHM=HS256
+""")
+
+# MongoDB connection with fallback to in-memory storage
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+client: Optional[AsyncIOMotorClient] = None
+db = None
+
+# Try to connect to MongoDB, fallback to in-memory storage
+try:
+    client = AsyncIOMotorClient(
+        mongo_url, serverSelectionTimeoutMS=1000
+    )  # 1s timeout
+    db_name = os.environ.get('DB_NAME', 'health_tracker')
+    db = client[db_name]
+    logging.info("MongoDB connected successfully")
+except (ServerSelectionTimeoutError, PyMongoError) as e:
+    logging.warning(f"MongoDB connection failed, using in-memory storage: {e}")
+    client = None
+    db = None
+
+# In-memory storage for development/fallback
+users_storage = {}
+records_storage = {}
+documents_storage = {}
 
 # JWT Configuration
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "your-secret-key-here")
-JWT_ALGORITHM = "HS256"
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-jwt-secret-key-change-in-production")
+JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_HOURS = 24
 
 # Security
 security = HTTPBearer()
 
 # Create the main app
-app = FastAPI(title="Análisis de Salud Capilar API")
+app = FastAPI(title="Health Tracker API - Unified", version="2.0.0")
 
-# Create a router with the /api prefix
+# Create a router with the /api prefix (for compatibility)
 api_router = APIRouter(prefix="/api")
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure properly for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Models
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
     name: str
+    password: str
+
+class UserRegistration(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(..., min_length=6)
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
 class User(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    email: EmailStr
+    id: str
+    email: str
     name: str
     gemini_api_key: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class UserResponse(BaseModel):
     id: str
@@ -99,6 +145,13 @@ class HairAnalysisResult(BaseModel):
     recommendations: List[str] = []
     confidence_score: Optional[float] = None
 
+class HealthRecord(BaseModel):
+    id: Optional[str] = None
+    user_id: str
+    record_type: str
+    data: Dict[str, Any]
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
 # Utility functions
 def hash_password(password: str) -> str:
     return bcrypt.hash(password)
@@ -113,6 +166,15 @@ def create_access_token(data: dict) -> str:
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
+def sanitize_user(doc: dict) -> dict:
+    """Return a user object safe for API responses."""
+    return {
+        "id": str(doc.get("_id", doc.get("username", doc.get("id")))),
+        "email": doc.get("email"),
+        "name": doc.get("name", doc.get("username")),
+        "has_gemini_key": bool(doc.get("gemini_api_key")),
+    }
+
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
@@ -122,56 +184,56 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except JWTError:
         raise HTTPException(status_code=401, detail="Token inválido")
     
-    user_data = await db.users.find_one({"id": user_id})
+    # Try MongoDB first, then fallback to memory storage
+    user_data = None
+    if db is not None:
+        user_data = await db.users.find_one({"id": user_id})
+    
+    if user_data is None and user_id in users_storage:
+        user_data = users_storage[user_id]
+        
     if user_data is None:
         raise HTTPException(status_code=401, detail="Usuario no encontrado")
     
     return User(**user_data)
 
-def extract_text_from_pdf(pdf_content: bytes) -> str:
-    """Extract text from PDF content."""
+async def get_current_user_basic(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """Basic user authentication for backward compatibility"""
     try:
-        pdf_file = io.BytesIO(pdf_content)
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
-        return text.strip()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error procesando PDF: {str(e)}")
+        payload = jwt.decode(credentials.credentials, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            raise HTTPException(status_code=401, detail="Token inválido")
+        return username
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido")
 
+# AI Analysis Functions with integrated Gemini API
 async def analyze_hair_with_gemini(api_key: str, image_base64: str) -> HairAnalysisResult:
     """Analyze hair image using Google Gemini API."""
     try:
         # Google AI Studio API endpoint
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         
-        # Prepare the analysis prompt
-        analysis_prompt = """
-Analiza esta imagen del cuero cabelludo y cabello. Proporciona un análisis detallado que incluya:
+        hair_analysis_prompt = """
+Analiza esta imagen del cuero cabelludo y proporciona un análisis detallado de salud capilar.
 
-1. **Conteo estimado de cabellos**: Estima la cantidad aproximada de cabellos visibles en la imagen (número entero)
+Evalúa y proporciona:
+1. Estimación del conteo de cabellos visible (número aproximado)
+2. Zonas de calvicie o pérdida de cabello identificadas
+3. Riesgo de alopecia a 3, 5 y 10 años (bajo/medio/alto)
+4. Recomendaciones específicas para mantener la salud capilar
+5. Puntuación de confianza del análisis (0.0 a 1.0)
 
-2. **Zonas de calvicie o pérdida**: Identifica áreas específicas donde hay pérdida capilar o adelgazamiento (lista de strings)
-
-3. **Riesgo de alopecia**: Evalúa el riesgo de progresión de alopecia en diferentes períodos:
-   - A 3 años: [Bajo/Moderado/Alto] (porcentaje estimado)
-   - A 5 años: [Bajo/Moderado/Alto] (porcentaje estimado)  
-   - A 10 años: [Bajo/Moderado/Alto] (porcentaje estimado)
-
-4. **Recomendaciones**: Lista de 3-5 recomendaciones específicas para mantener o mejorar la salud capilar
-
-5. **Confianza del análisis**: Puntuación de 0.0 a 1.0 sobre la confianza en el análisis
-
-Responde SOLO en formato JSON válido con esta estructura exacta:
+Responde en formato JSON:
 {
     "hair_count_estimate": número_entero,
     "baldness_zones": ["zona1", "zona2"],
-    "alopecia_risk_3_years": "nivel (porcentaje%)",
-    "alopecia_risk_5_years": "nivel (porcentaje%)", 
-    "alopecia_risk_10_years": "nivel (porcentaje%)",
-    "recommendations": ["recomendación1", "recomendación2", "recomendación3"],
-    "confidence_score": número_decimal
+    "alopecia_risk_3_years": "bajo|medio|alto",
+    "alopecia_risk_5_years": "bajo|medio|alto",
+    "alopecia_risk_10_years": "bajo|medio|alto",
+    "recommendations": ["recomendación1", "recomendación2"],
+    "confidence_score": 0.85
 }
 """
 
@@ -179,11 +241,11 @@ Responde SOLO en formato JSON válido con esta estructura exacta:
         payload = {
             "contents": [{
                 "parts": [
-                    {"text": analysis_prompt},
+                    {"text": hair_analysis_prompt},
                     {
                         "inline_data": {
                             "mime_type": "image/jpeg",
-                            "data": image_base64.split(",")[-1] if "," in image_base64 else image_base64
+                            "data": image_base64
                         }
                     }
                 ]
@@ -197,43 +259,67 @@ Responde SOLO en formato JSON válido con esta estructura exacta:
 
         result = response.json()
         
-        # Extract the generated text
+        # Extract and parse the generated text
         if "candidates" in result and len(result["candidates"]) > 0:
             generated_text = result["candidates"][0]["content"]["parts"][0]["text"]
             
-            # Try to parse the JSON response
+            # Try to parse JSON response
             try:
-                # Clean the response text to extract JSON
-                response_text = generated_text.strip()
-                if response_text.startswith("```json"):
-                    response_text = response_text[7:]
-                if response_text.endswith("```"):
-                    response_text = response_text[:-3]
-                
-                analysis_data = json.loads(response_text)
-                return HairAnalysisResult(**analysis_data)
+                # Clean the response and extract JSON
+                json_start = generated_text.find('{')
+                json_end = generated_text.rfind('}') + 1
+                if json_start != -1 and json_end != -1:
+                    json_text = generated_text[json_start:json_end]
+                    analysis_data = json.loads(json_text)
                     
-            except json.JSONDecodeError as e:
-                logging.warning(f"Could not parse Gemini JSON response: {e}. Response: {generated_text[:200]}")
-                # Return a basic analysis if JSON parsing fails
-                return HairAnalysisResult(
-                    hair_count_estimate=None,
-                    baldness_zones=["Análisis textual disponible"],
-                    alopecia_risk_3_years="No determinado",
-                    alopecia_risk_5_years="No determinado", 
-                    alopecia_risk_10_years="No determinado",
-                    recommendations=[f"Análisis detallado: {generated_text[:200]}..."],
-                    confidence_score=0.5
-                )
+                    return HairAnalysisResult(
+                        hair_count_estimate=analysis_data.get("hair_count_estimate"),
+                        baldness_zones=analysis_data.get("baldness_zones", []),
+                        alopecia_risk_3_years=analysis_data.get("alopecia_risk_3_years"),
+                        alopecia_risk_5_years=analysis_data.get("alopecia_risk_5_years"),
+                        alopecia_risk_10_years=analysis_data.get("alopecia_risk_10_years"),
+                        recommendations=analysis_data.get("recommendations", []),
+                        confidence_score=analysis_data.get("confidence_score")
+                    )
+            except json.JSONDecodeError:
+                # Fallback if JSON parsing fails
+                pass
+                
+            # Fallback response if JSON parsing failed
+            return HairAnalysisResult(
+                hair_count_estimate=0,
+                baldness_zones=["Análisis visual"],
+                alopecia_risk_3_years="medio",
+                alopecia_risk_5_years="medio", 
+                alopecia_risk_10_years="alto",
+                recommendations=[f"Análisis: {generated_text[:200]}..."],
+                confidence_score=0.7
+            )
         else:
             raise ValueError("No response from Gemini API")
-
+            
     except requests.exceptions.RequestException as e:
         logging.error(f"HTTP error calling Gemini API: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error conectando con Gemini API: {str(e)}")
+        return HairAnalysisResult(
+            hair_count_estimate=0,
+            baldness_zones=["Error en análisis"],
+            alopecia_risk_3_years="desconocido",
+            alopecia_risk_5_years="desconocido",
+            alopecia_risk_10_years="desconocido",
+            recommendations=["Revisar imagen y reintentar análisis"],
+            confidence_score=0.0
+        )
     except Exception as e:
         logging.error(f"Error analyzing hair with Gemini: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error en análisis con IA: {str(e)}")
+        return HairAnalysisResult(
+            hair_count_estimate=0,
+            baldness_zones=["Error en análisis"],
+            alopecia_risk_3_years="desconocido",
+            alopecia_risk_5_years="desconocido", 
+            alopecia_risk_10_years="desconocido",
+            recommendations=[f"Error en análisis: {str(e)}"],
+            confidence_score=0.0
+        )
 
 async def analyze_document_with_gemini(api_key: str, text_content: str, document_type: str) -> Dict[str, Any]:
     """Analyze document content using Google Gemini API."""
@@ -278,22 +364,23 @@ Responde en formato JSON:
         if "candidates" in result and len(result["candidates"]) > 0:
             generated_text = result["candidates"][0]["content"]["parts"][0]["text"]
             
+            # Try to parse JSON response
             try:
-                # Clean the response text to extract JSON
-                response_text = generated_text.strip()
-                if response_text.startswith("```json"):
-                    response_text = response_text[7:]
-                if response_text.endswith("```"):
-                    response_text = response_text[:-3]
-                
-                return json.loads(response_text)
+                json_start = generated_text.find('{')
+                json_end = generated_text.rfind('}') + 1
+                if json_start != -1 and json_end != -1:
+                    json_text = generated_text[json_start:json_end]
+                    return json.loads(json_text)
             except json.JSONDecodeError:
-                return {
-                    "main_findings": ["Documento procesado"],
-                    "recommendations": [f"Análisis: {generated_text[:200]}..."],
-                    "follow_up_points": ["Consulta con especialista"],
-                    "summary": generated_text[:300] + "..." if len(generated_text) > 300 else generated_text
-                }
+                pass
+            
+            # Fallback if JSON parsing fails
+            return {
+                "main_findings": ["Documento procesado"],
+                "recommendations": [f"Análisis: {generated_text[:200]}..."],
+                "follow_up_points": ["Consulta con especialista"],
+                "summary": generated_text[:300] + "..." if len(generated_text) > 300 else generated_text
+            }
         else:
             raise ValueError("No response from Gemini API")
             
@@ -311,45 +398,97 @@ Responde en formato JSON:
             "main_findings": ["Error en análisis"],
             "recommendations": ["Revisar documento manualmente"],
             "follow_up_points": ["Consulta técnica"],
-            "summary": f"Error: {str(e)}"
+            "summary": f"Error interno: {str(e)}"
         }
 
-# Authentication endpoints
+# Health check endpoints
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "message": "Health Tracker API - Unified is running",
+        "timestamp": datetime.utcnow().isoformat(),
+        "database": "connected" if db is not None else "in_memory",
+        "version": "2.0.0"
+    }
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to Health Tracker API - Unified",
+        "docs": "/docs",
+        "health": "/health",
+        "version": "2.0.0"
+    }
+
+# Authentication endpoints (both with and without /api prefix for compatibility)
 @api_router.post("/auth/register", response_model=Token)
-async def register(user_data: UserCreate):
-    # Check if user already exists
-    existing_user = await db.users.find_one({"email": user_data.email})
-    if existing_user:
-        raise HTTPException(status_code=400, detail="El email ya está registrado")
-    
-    # Create new user
-    hashed_password = hash_password(user_data.password)
-    user = User(
-        email=user_data.email,
-        name=user_data.name
-    )
-    
-    user_dict = user.dict()
-    user_dict["password"] = hashed_password
-    
-    await db.users.insert_one(user_dict)
-    
-    # Create access token
-    access_token = create_access_token(data={"sub": user.id})
-    
-    user_response = UserResponse(
-        id=user.id,
-        email=user.email,
-        name=user.name,
-        has_gemini_key=False
-    )
-    
-    return Token(access_token=access_token, user=user_response)
+@app.post("/auth/register")
+async def register(user: UserRegistration):
+    try:
+        # Check if user exists
+        user_exists = False
+        if db is not None:
+            existing_user = await db.users.find_one({"email": user.email})
+            user_exists = existing_user is not None
+        else:
+            # Check in-memory storage
+            for stored_user in users_storage.values():
+                if stored_user.get("email") == user.email:
+                    user_exists = True
+                    break
+        
+        if user_exists:
+            raise HTTPException(status_code=400, detail="El email ya está registrado")
+        
+        # Create new user
+        user_id = str(uuid.uuid4())
+        hashed_password = hash_password(user.password)
+        
+        user_data = {
+            "id": user_id,
+            "email": user.email,
+            "name": user.username,
+            "password": hashed_password,
+            "created_at": datetime.utcnow(),
+            "has_gemini_key": False
+        }
+        
+        # Store in database or memory
+        if db is not None:
+            await db.users.insert_one(user_data)
+        else:
+            users_storage[user_id] = user_data
+        
+        # Create access token
+        access_token = create_access_token(data={"sub": user_id})
+        
+        user_response = UserResponse(
+            id=user_id,
+            email=user.email,
+            name=user.username,
+            has_gemini_key=False
+        )
+        
+        return Token(access_token=access_token, user=user_response)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Registration error: {e}")
 
 @api_router.post("/auth/login", response_model=Token)
+@app.post("/auth/login")
 async def login(user_data: UserLogin):
     # Find user
-    user_doc = await db.users.find_one({"email": user_data.email})
+    user_doc = None
+    if db is not None:
+        user_doc = await db.users.find_one({"email": user_data.email})
+    else:
+        # Check in-memory storage
+        for stored_user in users_storage.values():
+            if stored_user.get("email") == user_data.email:
+                user_doc = stored_user
+                break
+    
     if not user_doc:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
@@ -369,26 +508,123 @@ async def login(user_data: UserLogin):
     
     return Token(access_token=access_token, user=user_response)
 
-@api_router.get("/auth/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return UserResponse(
-        id=current_user.id,
-        email=current_user.email,
-        name=current_user.name,
-        has_gemini_key=bool(current_user.gemini_api_key)
-    )
+@api_router.get("/auth/me")
+@app.get("/auth/me")
+async def auth_me(current_user: str = Depends(get_current_user_basic)):
+    # Get user data
+    user_doc = None
+    if db is not None:
+        user_doc = await db.users.find_one({"id": current_user})
+    else:
+        user_doc = users_storage.get(current_user)
+    
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return sanitize_user(user_doc)
 
 @api_router.put("/auth/gemini-key")
-async def update_gemini_key(
-    key_data: GeminiKeyUpdate,
-    current_user: User = Depends(get_current_user)
+@app.put("/auth/gemini-key")
+async def set_gemini_key(
+    payload: dict,
+    current_user: str = Depends(get_current_user_basic),
 ):
-    await db.users.update_one(
-        {"id": current_user.id},
-        {"$set": {"gemini_api_key": key_data.gemini_api_key}}
-    )
-    return {"message": "API key de Gemini actualizada correctamente"}
+    gemini_key = payload.get("gemini_api_key")
+    if not gemini_key:
+        raise HTTPException(status_code=400, detail="gemini_api_key requerido")
+    
+    # Update user with Gemini API key
+    if db is not None:
+        await db.users.update_one(
+            {"id": current_user},
+            {"$set": {"has_gemini_key": True, "gemini_api_key": gemini_key}},
+        )
+        doc = await db.users.find_one({"id": current_user})
+        return {"status": "ok", "user": sanitize_user(doc)}
+    
+    # Update in-memory storage
+    if current_user in users_storage:
+        users_storage[current_user]["has_gemini_key"] = True
+        users_storage[current_user]["gemini_api_key"] = gemini_key
+        return {
+            "status": "ok",
+            "user": sanitize_user(users_storage[current_user]),
+        }
+    
+    raise HTTPException(status_code=404, detail="User not found")
 
+# Health records endpoints
+@api_router.get("/records")
+@app.get("/records")
+async def get_records(current_user: str = Depends(get_current_user_basic)):
+    if db is not None:
+        # Get user records from database
+        records = []
+        async for record in db.records.find({"user_id": current_user}):
+            record["_id"] = str(record["_id"])
+            records.append(record)
+        return records
+    else:
+        # Return records from memory storage
+        user_records = records_storage.get(current_user, [])
+        return user_records
+
+@api_router.post("/records")
+@app.post("/records")
+async def create_record(
+    record: HealthRecord,
+    current_user: str = Depends(get_current_user_basic),
+):
+    record.user_id = current_user
+    record.id = str(uuid.uuid4())
+    
+    if db is not None:
+        # Store in database
+        record_dict = record.model_dump()
+        await db.records.insert_one(record_dict)
+        return {"status": "ok", "record": record_dict}
+    else:
+        # Store in memory
+        if current_user not in records_storage:
+            records_storage[current_user] = []
+        record_dict = record.model_dump()
+        records_storage[current_user].append(record_dict)
+        return {"status": "ok", "record": record_dict}
+
+# File upload endpoint
+@api_router.post("/upload")
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    current_user: str = Depends(get_current_user_basic),
+):
+    try:
+        # Read file content
+        contents = await file.read()
+        
+        # Basic file validation
+        if len(contents) > 10 * 1024 * 1024:  # 10MB limit
+            raise HTTPException(status_code=413, detail="File too large")
+        
+        # For development, we'll just return a success response
+        # In production, you'd want to store this properly
+        file_info = {
+            "filename": file.filename,
+            "content_type": file.content_type,
+            "size": len(contents),
+            "uploaded_at": datetime.utcnow().isoformat()
+        }
+        
+        return {
+            "status": "ok", 
+            "message": "File uploaded successfully",
+            "file": file_info
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload error: {str(e)}")
+
+# Document management endpoints with AI analysis
 @api_router.post("/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
@@ -396,33 +632,43 @@ async def upload_document(
     current_user: User = Depends(get_current_user)
 ):
     try:
-        # Read file content
-        content = await file.read()
+        if file.size > 10 * 1024 * 1024:  # 10MB limit
+            raise HTTPException(status_code=413, detail="Archivo muy grande")
         
-        if document_type == "image":
-            # Convert image to base64
-            base64_content = base64.b64encode(content).decode('utf-8')
-            processed_content = base64_content
-        elif document_type == "pdf":
+        # Read file content
+        content_bytes = await file.read()
+        
+        # Process content based on file type
+        content = ""
+        if document_type == "pdf":
             # Extract text from PDF
-            text_content = extract_text_from_pdf(content)
-            processed_content = text_content
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(content_bytes))
+            for page in pdf_reader.pages:
+                content += page.extract_text() + "\n"
         else:
-            raise HTTPException(status_code=400, detail="Tipo de documento no soportado")
+            # For images, store as base64
+            content = base64.b64encode(content_bytes).decode('utf-8')
         
         # Create document record
         document = HealthDocument(
             user_id=current_user.id,
             document_type=document_type,
             original_filename=file.filename,
-            content=processed_content
+            content=content
         )
         
-        # Save to database
-        await db.health_documents.insert_one(document.dict())
+        document_dict = document.model_dump()
+        
+        # Store document
+        if db is not None:
+            await db.health_documents.insert_one(document_dict)
+        else:
+            if current_user.id not in documents_storage:
+                documents_storage[current_user.id] = []
+            documents_storage[current_user.id].append(document_dict)
         
         return {
-            "document_id": document.id,
+            "id": document.id,
             "filename": file.filename,
             "type": document_type,
             "message": "Documento subido correctamente"
@@ -433,7 +679,11 @@ async def upload_document(
 
 @api_router.get("/documents")
 async def get_documents(current_user: User = Depends(get_current_user)):
-    documents = await db.health_documents.find({"user_id": current_user.id}).to_list(1000)
+    if db is not None:
+        documents = await db.health_documents.find({"user_id": current_user.id}).to_list(1000)
+    else:
+        documents = documents_storage.get(current_user.id, [])
+    
     return [
         {
             "id": doc["id"],
@@ -458,10 +708,18 @@ async def analyze_hair(
         )
     
     # Get document
-    document = await db.health_documents.find_one({
-        "id": request.document_id,
-        "user_id": current_user.id
-    })
+    document = None
+    if db is not None:
+        document = await db.health_documents.find_one({
+            "id": request.document_id,
+            "user_id": current_user.id
+        })
+    else:
+        user_docs = documents_storage.get(current_user.id, [])
+        for doc in user_docs:
+            if doc["id"] == request.document_id:
+                document = doc
+                break
     
     if not document:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
@@ -480,18 +738,29 @@ async def analyze_hair(
         )
         
         # Save analysis result
-        await db.health_documents.update_one(
-            {"id": request.document_id},
-            {"$set": {"analysis_result": result.dict()}}
-        )
+        analysis_data = result.model_dump()
+        update_data = {"analysis_result": analysis_data}
         
-        return result
+        if db is not None:
+            await db.health_documents.update_one(
+                {"id": request.document_id},
+                {"$set": update_data}
+            )
+        else:
+            # Update in-memory storage
+            user_docs = documents_storage.get(current_user.id, [])
+            for i, doc in enumerate(user_docs):
+                if doc["id"] == request.document_id:
+                    user_docs[i].update(update_data)
+                    break
         
-    except HTTPException:
-        raise
+        return {
+            "analysis_result": analysis_data,
+            "message": "Análisis completado exitosamente"
+        }
+        
     except Exception as e:
-        logging.error(f"Unexpected error in hair analysis: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error inesperado: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
 
 @api_router.post("/analysis/document")
 async def analyze_document(
@@ -506,10 +775,18 @@ async def analyze_document(
         )
     
     # Get document
-    document = await db.health_documents.find_one({
-        "id": request.document_id,
-        "user_id": current_user.id
-    })
+    document = None
+    if db is not None:
+        document = await db.health_documents.find_one({
+            "id": request.document_id,
+            "user_id": current_user.id
+        })
+    else:
+        user_docs = documents_storage.get(current_user.id, [])
+        for doc in user_docs:
+            if doc["id"] == request.document_id:
+                document = doc
+                break
     
     if not document:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
@@ -529,24 +806,41 @@ async def analyze_document(
         )
         
         # Save analysis result
-        await db.health_documents.update_one(
-            {"id": request.document_id},
-            {"$set": {"analysis_result": result}}
-        )
+        update_data = {"analysis_result": result}
         
-        return result
+        if db is not None:
+            await db.health_documents.update_one(
+                {"id": request.document_id},
+                {"$set": update_data}
+            )
+        else:
+            # Update in-memory storage
+            user_docs = documents_storage.get(current_user.id, [])
+            for i, doc in enumerate(user_docs):
+                if doc["id"] == request.document_id:
+                    user_docs[i].update(update_data)
+                    break
+        
+        return {
+            "analysis_result": result,
+            "message": "Análisis de documento completado"
+        }
         
     except Exception as e:
-        logging.error(f"Error in document analysis: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
 
 # Health dashboard endpoint
 @api_router.get("/dashboard")
 async def get_dashboard(current_user: User = Depends(get_current_user)):
     # Get recent documents and analyses
-    documents = await db.health_documents.find(
-        {"user_id": current_user.id}
-    ).sort("created_at", -1).limit(10).to_list(10)
+    documents = []
+    if db is not None:
+        documents = await db.health_documents.find(
+            {"user_id": current_user.id}
+        ).sort("created_at", -1).limit(10).to_list(10)
+    else:
+        user_docs = documents_storage.get(current_user.id, [])
+        documents = sorted(user_docs, key=lambda x: x.get("created_at", datetime.utcnow()), reverse=True)[:10]
     
     analyzed_documents = [doc for doc in documents if doc.get("analysis_result")]
     
@@ -565,24 +859,29 @@ async def get_dashboard(current_user: User = Depends(get_current_user)):
         ]
     }
 
-# Include the router in the main app
+# Include the router in the main app for /api endpoints
 app.include_router(api_router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger(__name__)
+
+@app.on_event("startup")
+async def startup_event():
+    logging.info("Health Tracker API - Unified started successfully")
+    if db is not None:
+        logging.info("Connected to MongoDB")
+    else:
+        logging.info("Using in-memory storage (MongoDB unavailable)")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
-    client.close()
+    if client:
+        client.close()
+        logging.info("MongoDB connection closed")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

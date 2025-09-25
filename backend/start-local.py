@@ -38,49 +38,12 @@ def main():
             else:
                 print("   Ejecuta: source .venv/bin/activate")
     
-    # Determinar qué servidor usar
-    # Si MongoDB no está disponible, usar server_dev.py
-    # Si MongoDB está disponible, usar server_basic.py
-    
-    print("\n🔍 Detectando configuración...")
-    
-    # Intentar determinar el mejor servidor para usar
-    use_dev_server = True
-    
-    # Verificar si MongoDB está disponible (opcional)
-    try:
-        import pymongo
-        from dotenv import load_dotenv
-        load_dotenv()
-        
-        mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-        if mongo_url != 'mongodb://localhost:27017' or os.environ.get('DEVELOPMENT_MODE') != 'true':
-            # Si hay una URL de MongoDB personalizada, intentar conectar
-            print(f"🔗 Probando conexión a MongoDB: {mongo_url}")
-            try:
-                client = pymongo.MongoClient(mongo_url, serverSelectionTimeoutMS=2000)
-                client.server_info()  # Forzar conexión
-                use_dev_server = False
-                print("✅ MongoDB disponible, usando server_basic.py")
-            except Exception as e:
-                print(f"❌ MongoDB no disponible: {e}")
-                print("🔄 Usando server_dev.py (almacenamiento en memoria)")
-        else:
-            print("🔄 Usando server_dev.py (modo desarrollo sin MongoDB)")
-            
-    except ImportError:
-        print("📦 pymongo no encontrado, usando server_dev.py")
-    except Exception as e:
-        print(f"⚠️  Error verificando MongoDB: {e}")
-        print("🔄 Usando server_dev.py por seguridad")
-    
-    # Seleccionar servidor
-    if use_dev_server:
-        server_file = "server_dev:app"
-        print("🚀 Iniciando servidor de desarrollo (sin MongoDB)")
-    else:
-        server_file = "server_basic:app"
-        print("🚀 Iniciando servidor básico (con MongoDB)")
+    # Usar el servidor unificado que automáticamente detecta MongoDB
+    print("\n🔍 Usando servidor unificado...")
+    server_file = "server:app"
+    print("🚀 Iniciando servidor unificado (detección automática de MongoDB)")
+    print("   - Si MongoDB está disponible: se conectará automáticamente")
+    print("   - Si MongoDB no está disponible: usará almacenamiento en memoria")
     
     print("📍 El servidor estará disponible en: http://localhost:8000")
     print("📖 Documentación API: http://localhost:8000/docs")

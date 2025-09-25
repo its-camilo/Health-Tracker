@@ -23,7 +23,7 @@ Una aplicación inteligente para el análisis de salud capilar que combina **Rea
 - **Motor**: Google Gemini 1.5 Flash (`gemini-1.5-flash:generateContent`)
 - **Capacidades**: Análisis multimodal (texto e imágenes)
 - **Formato de respuesta**: JSON estructurado para integración perfecta
-- **Seguridad**: Las claves API se almacenan de forma segura por usuario
+- **Configuración**: Las claves API se configuran directamente en la aplicación (pantalla de Configuración)
 
 ## 🚀 Inicio Rápido
 
@@ -41,7 +41,7 @@ start-local.bat
 
 # Opción 3: Comando directo
 cd backend
-python -m uvicorn server_dev:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 #### Frontend + Backend:
@@ -120,9 +120,7 @@ uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 ```
 Health-Tracker/
 ├── backend/
-│   ├── server.py              # 🤖 Servidor completo con IA
-│   ├── server_basic.py        # 🔄 Servidor híbrido (con/sin MongoDB)
-│   ├── server_dev.py          # 🚀 Servidor desarrollo (memoria)
+│   ├── server.py              # 🤖 Servidor unificado (detección automática)
 │   ├── start-local.py         # 🔧 Script inicio universal
 │   ├── start-local.bat        # 🔧 Script inicio Windows
 │   ├── .env.example           # ⚙️ Configuración template
@@ -142,31 +140,28 @@ Health-Tracker/
 └── README.md                  # 📖 Esta documentación
 ```
 
-## 🔄 Modos de Servidor
+## 🚀 Servidor Unificado
 
-### 🤖 `server.py` - Producción/IA Completa
-- **Uso**: Producción y Codespaces
+### 🤖 `server.py` - Servidor Inteligente Todo-en-Uno
+- **Uso**: Desarrollo local, producción y Codespaces
 - **Características**: 
-  - Funcionalidad completa de IA
-  - Análisis de imágenes y documentos
-  - Requiere MongoDB y API key de Gemini
+  - **Detección automática de MongoDB**: Se conecta automáticamente si está disponible, usa almacenamiento en memoria como respaldo
+  - **Funcionalidad completa de IA**: Análisis de imágenes y documentos con Google Gemini
+  - **API Key integrada**: La configuración de Gemini se hace directamente desde la aplicación
+  - **Compatibilidad total**: Funciona tanto con como sin base de datos
+  - **Endpoints duales**: Compatible con rutas `/api/*` y rutas directas para máxima compatibilidad
 - **Comando**: `uvicorn server:app --host 0.0.0.0 --port 8000 --reload`
 
-### 🔄 `server_basic.py` - Híbrido
-- **Uso**: Desarrollo con opción de MongoDB
-- **Características**:
-  - Funciona con o sin MongoDB
-  - Fallback a almacenamiento en memoria
-  - Compatible local y Codespaces
-- **Comando**: `uvicorn server_basic:app --host 0.0.0.0 --port 8000 --reload`
+### 🔄 Modo de Funcionamiento
+- **Con MongoDB disponible**: 
+  - Conecta automáticamente a la base de datos
+  - Almacena usuarios, documentos y análisis de forma persistente
+  - Ideal para producción y desarrollo con datos persistentes
 
-### 🚀 `server_dev.py` - Desarrollo Rápido
-- **Uso**: Desarrollo local sin dependencias
-- **Características**:
-  - Solo almacenamiento en memoria
-  - Sin MongoDB ni IA
-  - Inicio instantáneo
-- **Comando**: `uvicorn server_dev:app --host 0.0.0.0 --port 8000 --reload`
+- **Sin MongoDB (Fallback)**:
+  - Usa almacenamiento en memoria automáticamente
+  - Perfecto para desarrollo rápido y pruebas
+  - Los datos se mantienen durante la sesión del servidor
 
 ## 🔧 Configuración de Entorno
 
@@ -234,30 +229,15 @@ npm install
 
 ## 🎯 Guía de Uso Detallada
 
-### 🔧 Modos de Ejecución Detallados
+### 🔧 Modo de Ejecución
 
-#### 🚀 Desarrollo Local (Sin MongoDB)
-- **Archivo:** `server_dev.py`
-- **Características:** 
-  - Almacenamiento en memoria
-  - No requiere base de datos
-  - Ideal para desarrollo rápido
-- **Comando:** `python -m uvicorn server_dev:app --host 0.0.0.0 --port 8000 --reload`
-
-#### 🔄 Desarrollo con MongoDB
-- **Archivo:** `server_basic.py` 
-- **Características:**
-  - Conecta a MongoDB local o remoto
-  - Fallback a almacenamiento en memoria si MongoDB no está disponible
-  - Compatible con Codespaces
-- **Comando:** `python -m uvicorn server_basic:app --host 0.0.0.0 --port 8000 --reload`
-
-#### 🤖 Producción/Codespaces
+#### 🤖 Servidor Unificado
 - **Archivo:** `server.py`
 - **Características:**
-  - Funcionalidad completa con IA (Gemini)
-  - Requiere MongoDB
-  - Análisis de documentos e imágenes
+  - **Detección automática**: MongoDB si está disponible, memoria como fallback
+  - **IA integrada**: Funcionalidad completa con Google Gemini
+  - **Configuración simplificada**: API Key de Gemini desde la aplicación
+  - **Compatibilidad total**: Funciona en local, Codespaces y producción
 - **Comando:** `python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload`
 
 ### ⚙️ Variables de Entorno Detalladas
@@ -290,9 +270,7 @@ Health-Tracker/
 │   ├── .env.example          # 📋 Plantilla de configuración
 │   ├── start-local.py        # 🔧 Script de inicio universal
 │   ├── start-local.bat       # 🔧 Script de inicio para Windows
-│   ├── server_dev.py         # 🚀 Servidor sin MongoDB
-│   ├── server_basic.py       # 🔄 Servidor híbrido
-│   ├── server.py            # 🤖 Servidor completo con IA
+│   ├── server.py            # 🤖 Servidor unificado inteligente
 │   └── requirements.txt     # 📦 Dependencias Python
 ├── scripts/
 │   ├── start-local-backend.bat    # 🖥️ Solo backend para Windows
@@ -347,10 +325,11 @@ python start-local.py
    pip install -r requirements.txt
    ```
 
-3. **Usa `server_dev.py` si tienes problemas con MongoDB**
+3. **Usa el servidor unificado si tienes problemas**
    ```bash
-   python -m uvicorn server_dev:app --host 0.0.0.0 --port 8000 --reload
+   python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
    ```
+   (El servidor detecta automáticamente si MongoDB está disponible)
 
 #### Error de conexión de frontend
 1. **Verifica que el backend esté ejecutándose en puerto 8000**
@@ -358,8 +337,8 @@ python start-local.py
 3. **Asegúrate de que no hay firewall bloqueando el puerto**
 
 #### Problemas con MongoDB
-- El sistema automáticamente usará almacenamiento en memoria si MongoDB no está disponible
-- Para desarrollo local, se recomienda usar `server_dev.py`
+- El servidor unificado automáticamente usa almacenamiento en memoria si MongoDB no está disponible
+- Para desarrollo local, el servidor funciona perfectamente sin MongoDB
 - Si necesitas MongoDB local, instálalo desde [mongodb.com](https://www.mongodb.com/try/download/community)
 
 #### Error de permisos en Windows
@@ -370,9 +349,9 @@ python start-local.py
 #### "Could not import module"
 - **Asegúrate de estar en el directorio correcto:**
   ```bash
-  # Para server_dev.py:
+  # Para el servidor unificado:
   cd backend
-  python -m uvicorn server_dev:app --reload
+  python -m uvicorn server:app --reload
   ```
 - **Verifica que las dependencias estén instaladas**
 - **Activa el entorno virtual si lo usas**
@@ -405,7 +384,7 @@ python -c "import fastapi; print('✅ FastAPI disponible')"
 
 # Probar importación del servidor
 cd backend
-python -c "import server_dev; print('✅ server_dev.py importa correctamente')"
+python -c "import server; print('✅ server.py importa correctamente')"
 
 # Verificar que el puerto 8000 está libre
 netstat -an | findstr :8000
@@ -442,7 +421,7 @@ Si encuentras problemas, sigue esta lista en orden:
 
 2. **📁 Verifica directorios:**
    - Estás en el directorio correcto (`backend/` para servidor)
-   - Los archivos existen (`server_dev.py`, `requirements.txt`, etc.)
+   - Los archivos existen (`server.py`, `requirements.txt`, etc.)
 
 3. **🌐 Verifica configuración:**
    - URLs en `frontend/constants/api.ts`
@@ -450,9 +429,9 @@ Si encuentras problemas, sigue esta lista en orden:
    - Puertos no ocupados (8000 para backend, 3000 para frontend)
 
 4. **🤖 Para funcionalidades de IA:**
-   - API key de Gemini configurada correctamente
+   - API key de Gemini configurada correctamente en la aplicación (pantalla Configuración)
    - Usuario tiene `has_gemini_key = true`
-   - Usando `server.py` (no `server_dev.py`)
+   - Usando el servidor unificado `server.py`
 
 ### 🆘 Obtener Ayuda
 
@@ -491,27 +470,22 @@ ls backend/  # Windows: dir backend\
 1. **🔧 Desarrollo local rápido**: 
    ```bash
    cd backend
-   python start-local.py  # Usa server_dev.py automáticamente
+   python start-local.py  # Usa el servidor unificado automáticamente
    ```
 
 2. **🧪 Pruebas con persistencia**:
    ```bash
    cd backend
-   python -m uvicorn server_basic:app --reload
+   python -m uvicorn server:app --reload
+   # MongoDB se conecta automáticamente si está disponible
    ```
 
 3. **🤖 Pruebas con IA completa**:
    ```bash
    cd backend
    python -m uvicorn server:app --reload
-   # Requiere: MongoDB + API key de Gemini
+   # Configura API key de Gemini desde la app (Configuración)
    ```
-
-4. **✅ Verificación final**:
-   - Probar en local con `server_dev.py`
-   - Probar en local con `server_basic.py` 
-   - Probar funcionalidades de IA con `server.py`
-   - Verificar compatibilidad con Codespaces
 
 ### 🔄 Compatibilidad Multiplataforma
 
