@@ -38,8 +38,6 @@
     "experiments": {
       "typedRoutes": true
     },
-    "extra": {
-      "EXPO_PUBLIC_BACKEND_URL": "https://fantastic-train-rxwxqr7g55xcww9v-8000.app.github.dev"
-    }
+    "extra": {}
   }
 }

@@ -1,12 +1,13 @@
 import Constants from 'expo-constants';
+import { RUNNING_IN_CODESPACES } from './environment';
 
 /**
- * Toggle this flag depending on your development environment.
- * - true  → use the Codespaces backend URL
- * - false → use the local backend URL
+ * 🔧 CONFIGURACIÓN CENTRAL - CAMBIA EL VALOR EN `environment.ts`
+ *
+ * Solo necesitas ajustar `RUNNING_IN_CODESPACES` en `frontend/constants/environment.ts`:
+ * - false → EJECUTAR EN LOCAL (http://127.0.0.1:8000)
+ * - true  → EJECUTAR EN CODESPACES (URL remota)
  */
-export const IS_CODESPACES = true;
-
 export const CODESPACES_BACKEND_URL = 'https://fantastic-train-rxwxqr7g55xcww9v-8000.app.github.dev';
 export const LOCAL_BACKEND_URL = 'http://127.0.0.1:8000';
 export const LOCAL_WEB_URL = 'http://localhost:3000';
@@ -23,7 +24,7 @@ function normalizeUrl(url: string): string {
 }
 
 const MANUAL_BACKEND_URL = normalizeUrl(
-  IS_CODESPACES ? CODESPACES_BACKEND_URL : LOCAL_BACKEND_URL
+  RUNNING_IN_CODESPACES ? CODESPACES_BACKEND_URL : LOCAL_BACKEND_URL
 );
 
 function resolveEnvBackendUrl(): string | undefined {
@@ -49,6 +50,14 @@ export function getBackendBaseUrl(): string {
 
 export function warnIfUsingFallback() {
   const envUrl = resolveEnvBackendUrl();
+  const finalUrl = getBackendBaseUrl();
+  
+  console.log('🔧 [Config] Backend URL Configuration:');
+  console.log('  - RUNNING_IN_CODESPACES:', RUNNING_IN_CODESPACES);
+  console.log('  - Environment URL:', envUrl);
+  console.log('  - Manual backend URL:', MANUAL_BACKEND_URL);
+  console.log('  - Final backend URL:', finalUrl);
+  
   if (!envUrl) {
     console.warn('[Config] Using manual backend URL fallback:', MANUAL_BACKEND_URL);
     console.warn('[Config] Local dev endpoints:', DEFAULT_LOCAL_ENDPOINTS);

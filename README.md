@@ -29,61 +29,25 @@ Una aplicación inteligente para el análisis de salud capilar que combina **Rea
 
 ### 🖥️ Desarrollo Local (Windows/Mac/Linux)
 
-#### Backend Solo:
+#### 1. Iniciar el backend (FastAPI)
 ```bash
-# Opción 1: Script universal (recomendado)
 cd backend
-python start-local.py
-
-# Opción 2: Script Windows
-cd backend
-start-local.bat
-
-# Opción 3: Comando directo
-cd backend
-python -m uvicorn server:app --host 0.0.0.0 --port 8000 --reload
+pip install -r requirements.txt  # primera vez
+python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-#### Frontend + Backend:
+#### 2. Iniciar el frontend (Expo Web)
 ```bash
-# Desde la raíz del proyecto (Windows)
-scripts\start-local-full.bat
-
-# O manualmente:
-# Terminal 1 - Backend
-cd backend
-python start-local.py
-
-# Terminal 2 - Frontend  
 cd frontend
-npm install
+npm install  # primera vez
 npx expo start --web
 ```
 
-### ☁️ GitHub Codespaces
+#### 3. Ejecutar ambos servicios
+- **Terminal 1:** backend (`uvicorn`)
+- **Terminal 2:** frontend (`npx expo start --web`)
 
-#### Backend:
-```bash
-# Script optimizado para Codespaces
-./scripts/start-backend.sh
-
-# O comando directo
-cd backend
-uvicorn server:app --host 0.0.0.0 --port 8000 --reload
-```
-
-#### Frontend + Backend:
-```bash
-# Iniciar ambos servicios
-./scripts/start-dev.sh
-
-# O manualmente:
-# Terminal 1 - Backend
-./scripts/start-backend.sh
-
-# Terminal 2 - Frontend
-./scripts/start-frontend.sh
-```
+> 💡 Si trabajas en GitHub Codespaces, cambia `RUNNING_IN_CODESPACES` a `true` en `frontend/constants/environment.ts` y expón los puertos 8000 y 8081. Los comandos para iniciar backend y frontend son los mismos mostrados arriba.
 
 ## 🔧 Configuración de IA (Gemini)
 
@@ -112,8 +76,8 @@ uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 - **Frontend Web**: http://localhost:3000
 
 ### Codespaces:
-- **Backend**: https://[codespace-name]-8000.app.github.dev
-- **Frontend**: https://[codespace-name]-3000.app.github.dev
+- **Backend** (Codespaces, si aplica): https://[codespace-name]-8000.app.github.dev
+- **Frontend** (Codespaces, si aplica): https://[codespace-name]-3000.app.github.dev
 
 ## 📁 Estructura del Proyecto
 
@@ -121,8 +85,6 @@ uvicorn server:app --host 0.0.0.0 --port 8000 --reload
 Health-Tracker/
 ├── backend/
 │   ├── server.py              # 🤖 Servidor unificado (detección automática)
-│   ├── start-local.py         # 🔧 Script inicio universal
-│   ├── start-local.bat        # 🔧 Script inicio Windows
 │   ├── .env.example           # ⚙️ Configuración template
 │   └── requirements.txt       # 📦 Dependencias Python
 ├── frontend/
@@ -133,10 +95,6 @@ Health-Tracker/
 │   │   └── upload.tsx         # 📤 Subida archivos
 │   ├── constants/api.ts       # 🌐 Configuración API
 │   └── context/AuthContext.tsx # 👤 Contexto usuario
-├── scripts/
-│   ├── start-local-full.bat   # 🚀 Inicio completo local
-│   ├── start-backend.sh       # ☁️ Backend Codespaces
-│   └── start-dev.sh           # ☁️ Completo Codespaces
 └── README.md                  # 📖 Esta documentación
 ```
 
@@ -180,8 +138,7 @@ DEVELOPMENT_MODE=true
 ```
 
 ### Configuración Frontend (`frontend/constants/api.ts`):
-- **Detección automática**: Local vs Codespaces
-- **Configuración manual**: Variables `IS_CODESPACES`, URLs personalizadas
+- **Flag manual**: `RUNNING_IN_CODESPACES` en `frontend/constants/environment.ts`
 - **Variable de entorno**: `EXPO_PUBLIC_BACKEND_URL` tiene prioridad
 
 ## 🛠️ Instalación y Configuración Completa
@@ -251,16 +208,8 @@ DB_NAME=health_tracker_dev
 JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production
 JWT_ALGORITHM=HS256
 
-# Para Codespaces (se sobrescribirán estas variables si están disponibles)
-# MONGO_URL=mongodb+srv://username:password@cluster.mongodb.net
-# DB_NAME=health_tracker_prod
-
-# Para desarrollo local sin MongoDB, usar server_dev.py en su lugar
-DEVELOPMENT_MODE=true
+# Variables adicionales aplican solo si tienes configuraciones personalizadas
 ```
-
-#### Para Codespaces:
-Las variables de entorno pueden ser sobrescritas en Codespaces usando secretos o configuración específica.
 
 ### 📁 Estructura de Archivos Detallada
 
@@ -268,15 +217,8 @@ Las variables de entorno pueden ser sobrescritas en Codespaces usando secretos o
 Health-Tracker/
 ├── backend/
 │   ├── .env.example          # 📋 Plantilla de configuración
-│   ├── start-local.py        # 🔧 Script de inicio universal
-│   ├── start-local.bat       # 🔧 Script de inicio para Windows
 │   ├── server.py            # 🤖 Servidor unificado inteligente
 │   └── requirements.txt     # 📦 Dependencias Python
-├── scripts/
-│   ├── start-local-backend.bat    # 🖥️ Solo backend para Windows
-│   ├── start-local-full.bat       # 🖥️ Backend + Frontend para Windows
-│   ├── start-backend.sh           # ☁️ Para Codespaces (Linux)
-│   └── start-dev.sh              # ☁️ Completo para Codespaces
 ├── frontend/
 │   ├── constants/api.ts     # 🌐 Configuración de API
 │   ├── app/
@@ -300,13 +242,13 @@ Los scripts están diseñados para funcionar tanto en local como en Codespaces:
 
 ### PowerShell y comandos:
 ```powershell
-# ❌ Error en PowerShell: cd backend && python start-local.py
+# ❌ Error en PowerShell: cd backend && python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 # ✅ Correcto en PowerShell:
-cd backend; python start-local.py
+cd backend; python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 
 # O usar dos comandos separados:
 cd backend
-python start-local.py
+python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ### 🐛 Errores Comunes y Soluciones
@@ -467,23 +409,22 @@ ls backend/  # Windows: dir backend\
 
 ### 🚀 Flujo de Desarrollo Recomendado
 
-1. **🔧 Desarrollo local rápido**: 
+1. **🔧 Desarrollo backend**: 
    ```bash
    cd backend
-   python start-local.py  # Usa el servidor unificado automáticamente
+   python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
    ```
 
-2. **🧪 Pruebas con persistencia**:
+2. **⚛️ Frontend web**:
    ```bash
-   cd backend
-   python -m uvicorn server:app --reload
-   # MongoDB se conecta automáticamente si está disponible
+   cd frontend
+   npx expo start --web
    ```
 
 3. **🤖 Pruebas con IA completa**:
    ```bash
    cd backend
-   python -m uvicorn server:app --reload
+   python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
    # Configura API key de Gemini desde la app (Configuración)
    ```
 
@@ -519,11 +460,14 @@ Ahora tienes todo lo necesario para ejecutar Health Tracker en tu entorno. Comie
 git clone <tu-repo-url>
 cd Health-Tracker
 
-# 2. Configuración rápida
+# 2. Configura dependencias
 cd backend
-python start-local.py
+pip install -r requirements.txt
 
-# 3. En otra terminal, inicia el frontend (opcional)
+# 3. Inicia el backend
+python -m uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+
+# 4. (Opcional) Inicia el frontend en otra terminal
 cd frontend
 npx expo start --web
 ```

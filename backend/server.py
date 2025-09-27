@@ -236,7 +236,7 @@ async def analyze_hair_with_gemini(api_key: str, image_base64: str) -> HairAnaly
     """Analyze hair image using Google Gemini API."""
     try:
         # Google AI Studio API endpoint
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b-latest:generateContent?key={api_key}"
 
         hair_analysis_prompt = """
 Analiza esta imagen del cuero cabelludo y proporciona un análisis detallado de salud capilar.
@@ -355,7 +355,7 @@ async def analyze_document_with_gemini(api_key: str, text_content: str, document
     """Analyze document content using Google Gemini API."""
     try:
         # Google AI Studio API endpoint
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-8b-latest:generateContent?key={api_key}"
 
         analysis_prompt = f"""
 Analiza el siguiente texto de un documento médico relacionado con salud capilar:
