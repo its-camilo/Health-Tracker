@@ -23,3 +23,4 @@ echo 🌐 Iniciando Expo (modo web)...
 npx expo start --web --clear
 
 pause
+
